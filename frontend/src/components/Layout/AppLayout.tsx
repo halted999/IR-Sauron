@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
+import { useThemeStore } from '../../store/theme'
 import { ROLE_LABELS } from '../../types'
 
 const navLinkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
@@ -20,6 +21,7 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore()
+  const { theme } = useThemeStore()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -44,16 +46,54 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           height: 56,
           background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border)',
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 24px',
-          gap: 24,
           flexShrink: 0,
           zIndex: 100,
           position: 'sticky',
           top: 0,
+          overflow: 'hidden',
         }}
       >
+        {/* Sauron theme: full-width background watermark */}
+        {theme === 'sauron' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                letterSpacing: '0.4em',
+                textTransform: 'uppercase',
+                color: 'rgba(255,90,31,0.14)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+              }}
+            >
+              find the hobbits
+            </span>
+          </div>
+        )}
+
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 24px',
+            gap: 24,
+          }}
+        >
         {/* Logo */}
         <Link
           to="/dashboard"
@@ -169,6 +209,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </button>
           </div>
         )}
+        </div>
       </header>
 
       {/* Content */}

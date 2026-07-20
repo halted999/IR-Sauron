@@ -5,14 +5,19 @@ import { ru } from 'date-fns/locale'
 import { useCaseStore } from '../store/case'
 import { useToastStore } from '../store/toast'
 import { useAuthStore } from '../store/auth'
+import { useThemeStore } from '../store/theme'
 import { createCase, updateCase } from '../api/cases'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { CaseModal } from '../components/Cases/CaseModal'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
+import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
 import type { Case, CaseStatus, CaseSeverity, CreateCaseData, VerificationStatus } from '../types'
-import { CASE_STATUS_LABELS, CASE_SEVERITY_LABELS, VERIFICATION_STATUS_LABELS } from '../types'
+import {
+  CASE_STATUS_LABELS, CASE_SEVERITY_LABELS, VERIFICATION_STATUS_LABELS,
+  getCaseStatusLabel, getSauronEyeVariant,
+} from '../types'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
@@ -45,6 +50,7 @@ const CLASSIFICATION_COLOR: Record<string, string> = {
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuthStore()
+  const { theme } = useThemeStore()
   const toast = useToastStore()
   const { cases, isLoading, fetchCases } = useCaseStore()
 
@@ -298,11 +304,17 @@ export const DashboardPage: React.FC = () => {
                       )}
                     </Td>
                     <Td>
-                      <Badge
-                        color={STATUS_COLOR[c.status] as 'blue'}
-                        label={CASE_STATUS_LABELS[c.status]}
-                        size="sm"
-                      />
+                      {(() => {
+                        const eyeVariant = theme === 'sauron' ? getSauronEyeVariant(c.status) : null
+                        return (
+                          <Badge
+                            color={STATUS_COLOR[c.status] as 'blue'}
+                            label={eyeVariant ? '' : getCaseStatusLabel(c.status, theme)}
+                            size="sm"
+                            icon={eyeVariant ? <SauronEyeIcon variant={eyeVariant} /> : undefined}
+                          />
+                        )
+                      })()}
                     </Td>
                     <Td>
                       <Badge

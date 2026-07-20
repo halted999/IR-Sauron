@@ -6,6 +6,7 @@ interface BadgeProps {
   color: BadgeColor
   label: string
   size?: 'sm' | 'md'
+  icon?: React.ReactNode
 }
 
 const COLOR_MAP: Record<BadgeColor, { bg: string; color: string; border: string }> = {
@@ -19,13 +20,14 @@ const COLOR_MAP: Record<BadgeColor, { bg: string; color: string; border: string 
   teal: { bg: 'rgba(0,200,200,0.15)', color: '#00c8c8', border: 'rgba(0,200,200,0.4)' },
 }
 
-export const Badge: React.FC<BadgeProps> = ({ color, label, size = 'md' }) => {
+export const Badge: React.FC<BadgeProps> = ({ color, label, size = 'md', icon }) => {
   const styles = COLOR_MAP[color]
   return (
     <span
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        gap: 5,
         background: styles.bg,
         color: styles.color,
         border: `1px solid ${styles.border}`,
@@ -37,7 +39,8 @@ export const Badge: React.FC<BadgeProps> = ({ color, label, size = 'md' }) => {
         lineHeight: '18px',
       }}
     >
-      {label}
+      {icon}
+      {label || null}
     </span>
   )
 }

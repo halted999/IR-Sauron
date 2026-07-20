@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useCaseStore } from '../store/case'
 import { useAuthStore } from '../store/auth'
+import { useThemeStore } from '../store/theme'
 import { useToastStore } from '../store/toast'
 import { useTimelineWS } from '../hooks/useTimelineWS'
 import { exportCase, updateCase } from '../api/cases'
@@ -20,10 +21,11 @@ import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
+import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
 import type { Event, CaseStatus, CaseSeverity, CreateEventData, VerificationStatus } from '../types'
 import {
-  CASE_STATUS_LABELS, CASE_SEVERITY_LABELS, EVENT_TYPE_LABELS, CONFIDENCE_LABELS,
-  VERIFICATION_STATUS_LABELS,
+  CASE_SEVERITY_LABELS, EVENT_TYPE_LABELS, CONFIDENCE_LABELS,
+  CASE_STATUS_LABELS, VERIFICATION_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
 type ActiveTab = 'timeline' | 'table' | 'iocs' | 'alerts'
@@ -41,6 +43,27 @@ const STATUS_COLOR: Record<CaseStatus, string> = {
   active: 'green',
   review: 'yellow',
   closed: 'gray',
+}
+
+const STATUS_BG: Record<CaseStatus, string> = {
+  open: 'rgba(88,166,255,0.15)',
+  active: 'rgba(63,185,80,0.15)',
+  review: 'rgba(210,153,34,0.15)',
+  closed: 'rgba(139,148,158,0.15)',
+}
+
+const STATUS_TEXT: Record<CaseStatus, string> = {
+  open: '#58a6ff',
+  active: '#3fb950',
+  review: '#d29922',
+  closed: '#8b949e',
+}
+
+const STATUS_BORDER: Record<CaseStatus, string> = {
+  open: 'rgba(88,166,255,0.4)',
+  active: 'rgba(63,185,80,0.4)',
+  review: 'rgba(210,153,34,0.4)',
+  closed: 'rgba(139,148,158,0.4)',
 }
 
 const VERIFICATION_COLOR: Record<VerificationStatus, string> = {
@@ -79,6 +102,7 @@ export const CasePage: React.FC = () => {
   const navigate = useNavigate()
   const toast = useToastStore()
   const { user } = useAuthStore()
+  const { theme } = useThemeStore()
   const {
     currentCase,
     branches,
@@ -155,6 +179,17 @@ export const CasePage: React.FC = () => {
       const updated = await updateCase(currentCase.id, { verification_status })
       setCurrentCase(updated)
       toast.success('Статус подтверждения обновлён')
+    } catch {
+      toast.error('Ошибка обновления статуса')
+    }
+  }
+
+  const handleStatusChange = async (status: CaseStatus) => {
+    if (!currentCase) return
+    try {
+      const updated = await updateCase(currentCase.id, { status })
+      setCurrentCase(updated)
+      toast.success('Статус дела обновлён')
     } catch {
       toast.error('Ошибка обновления статуса')
     }
@@ -257,6 +292,8 @@ export const CasePage: React.FC = () => {
     user?.role === 'investigator' ||
     user?.role === 'threat_hunter'
 
+  const statusEyeVariant = theme === 'sauron' ? getSauronEyeVariant(currentCase.status) : null
+
   return (
     <AppLayout>
       <div
@@ -331,11 +368,40 @@ export const CasePage: React.FC = () => {
                     {currentCase.title}
                   </h2>
                 )}
-                <Badge
-                  color={STATUS_COLOR[currentCase.status] as 'blue'}
-                  label={CASE_STATUS_LABELS[currentCase.status]}
-                  size="sm"
-                />
+                {canEdit ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {statusEyeVariant && <SauronEyeIcon variant={statusEyeVariant} />}
+                    <select
+                      value={currentCase.status}
+                      onChange={(e) => handleStatusChange(e.target.value as CaseStatus)}
+                      style={{
+                        width: 'auto',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        padding: '1px 22px 1px 8px',
+                        borderRadius: '20px',
+                        border: `1px solid ${STATUS_BORDER[currentCase.status]}`,
+                        background: STATUS_BG[currentCase.status],
+                        color: STATUS_TEXT[currentCase.status],
+                      }}
+                    >
+                      {Object.entries(CASE_STATUS_LABELS).map(([val, label]) => (
+                        <option key={val} value={val}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <Badge
+                    color={STATUS_COLOR[currentCase.status] as 'blue'}
+                    label={statusEyeVariant ? '' : getCaseStatusLabel(currentCase.status, theme)}
+                    size="sm"
+                    icon={
+                      statusEyeVariant ? <SauronEyeIcon variant={statusEyeVariant} /> : undefined
+                    }
+                  />
+                )}
                 <Badge
                   color={SEVERITY_COLOR[currentCase.severity] as 'red'}
                   label={CASE_SEVERITY_LABELS[currentCase.severity]}

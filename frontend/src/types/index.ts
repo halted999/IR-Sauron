@@ -282,6 +282,30 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   closed: 'Закрыто',
 }
 
+const SAURON_STATUS_LABELS: Partial<Record<CaseStatus, string>> = {
+  open: 'Открытый глаз Саурона',
+  active: 'Фиолетовый глаз Саурона',
+  review: 'Прищуренный глаз Саурона',
+  closed: 'Закрытый глаз Саурона',
+}
+
+export function getCaseStatusLabel(status: CaseStatus, theme: string): string {
+  if (theme === 'sauron' && SAURON_STATUS_LABELS[status]) {
+    return SAURON_STATUS_LABELS[status]!
+  }
+  return CASE_STATUS_LABELS[status]
+}
+
+export function getSauronEyeVariant(
+  status: CaseStatus,
+): 'open' | 'closed' | 'review' | 'active' | null {
+  if (status === 'open') return 'open'
+  if (status === 'active') return 'active'
+  if (status === 'review') return 'review'
+  if (status === 'closed') return 'closed'
+  return null
+}
+
 export const VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   in_progress: 'В работе',
   confirmed: 'Подтверждён',
