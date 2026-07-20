@@ -1,0 +1,263 @@
+version: '3.9'
+
+# IR Timeline Constructor — production compose
+# Запуск: docker compose --env-file .env up -d
+# С SSO:  docker compose --env-file .env --profile sso up -d
+
+services:
+
+  # ── Reverse proxy + TLS termination ────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: irt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - irt-front
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── Frontend (React SPA → nginx static) ────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_BASE: /api/v1
+        VITE_WS_BASE: /ws
+    container_name: irt-frontend
+    restart: unless-stopped
+    networks:
+      - irt-front
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ── Backend API (FastAPI / Python) ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: irt-backend
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Redis (sessions + WebSocket pub/sub)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # MinIO (artifact storage)
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-artifacts}
+      MINIO_SECURE: "false"
+      # App security
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+      MFA_REQUIRED_ROLES: ir_lead,investigator,threat_hunter
+      # OIDC/SSO (optional)
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+      # Feature flags
+      AUDIT_LOG_IMMUTABLE: "true"
+      ARTIFACT_WORM_ENABLED: ${ARTIFACT_WORM_ENABLED:-false}
+      # Timezone (all events normalised to UTC internally)
+      TZ: UTC
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    networks:
+      - irt-front
+      - irt-back
+    volumes:
+      - backend_tmp:/tmp/irt
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # ── PostgreSQL 16 ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: irt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # init.sql хранится для документации; схему создаёт SQLAlchemy через create_all при старте backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - irt-back
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── Redis 7 (sessions, pub/sub, rate-limit) ─────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: irt-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --protected-mode yes
+      --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - irt-back
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ── MinIO (S3-совместимое хранилище артефактов, поддерживает WORM/air-gap) ─
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: irt-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      MINIO_BROWSER: "off"   # выключен в prod — консоль только через VPN/admin сеть
+    volumes:
+      - minio_data:/data
+    networks:
+      - irt-back
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── MinIO init (создание бакета + политики) — запускается один раз ─────────
+  minio-init:
+    image: minio/mc:RELEASE.2024-01-13T08-44-48Z
+    container_name: irt-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set irt http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY};
+        mc mb --ignore-existing irt/${MINIO_BUCKET:-artifacts};
+        mc anonymous set none irt/${MINIO_BUCKET:-artifacts};
+        echo 'MinIO bucket ready';
+      "
+    networks:
+      - irt-back
+
+  # ── Keycloak SSO (OIDC/SAML/LDAP) — опциональный профиль ──────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: irt-keycloak
+    restart: unless-stopped
+    command: start --optimized
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_SCHEMA: keycloak
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+      KC_LOG_LEVEL: warn
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - irt-back
+      - irt-front
+    profiles:
+      - sso
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+# ── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  backend_tmp:
+    driver: local
+
+# ── Networks (front/back разделены для изоляции) ────────────────────────────
+networks:
+  irt-front:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  irt-back:
+    driver: bridge
+    internal: true    # backend-сеть не имеет выхода наружу
+    ipam:
+      config:
+        - subnet: 172.20.1.0/24
