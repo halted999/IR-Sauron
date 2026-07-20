@@ -1,4 +1,5 @@
 # IR-Sauron
+![Uploading image.png…]()
 
 Конструктор тайлайна расследований инцидентов информационной безопасности (Incident Response Timeline).
 
