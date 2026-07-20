@@ -1,5 +1,6 @@
 # IR-Sauron
-![Uploading image.png…]()
+
+<img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
 
 Конструктор тайлайна расследований инцидентов информационной безопасности (Incident Response Timeline).
 
