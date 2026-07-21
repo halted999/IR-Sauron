@@ -1,12 +1,12 @@
 # =============================================================================
-# IR Timeline Constructor — Скрипт развёртывания
+# IR-Sauron — Скрипт развёртывания
 # Запускать ПОСЛЕ установки Docker и перезагрузки
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 
-Write-Host "=== IR Timeline: развёртывание ===" -ForegroundColor Cyan
+Write-Host "=== IR-Sauron: развёртывание ===" -ForegroundColor Cyan
 Set-Location $ProjectDir
 
 # ── 1. Проверка Docker ────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ if (-not (Test-Path "nginx\ssl\cert.pem")) {
     if ($openssl) {
         & $openssl req -x509 -nodes -newkey rsa:2048 `
             -keyout "$ssl_dir\key.pem" -out "$ssl_dir\cert.pem" `
-            -days 365 -subj "/CN=localhost/O=IR-Timeline/C=RU" 2>&1 | Out-Null
+            -days 365 -subj "/CN=localhost/O=IR-Sauron/C=RU" 2>&1 | Out-Null
         Write-Host "Сертификат создан через openssl." -ForegroundColor Green
     } else {
         # PowerShell self-signed (без openssl)
@@ -112,7 +112,7 @@ do {
 Write-Host ""
 if ($health -eq "healthy") {
     Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "║   IR Timeline успешно запущен!           ║" -ForegroundColor Green
+    Write-Host "║   IR-Sauron успешно запущен!             ║" -ForegroundColor Green
     Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Green
 } else {
     Write-Host "Сервисы запущены (backend ещё стартует, подождите 1-2 мин)." -ForegroundColor Yellow

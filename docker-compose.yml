@@ -1,6 +1,6 @@
 version: '3.9'
 
-# IR Timeline Constructor — production compose
+# IR-Sauron — production compose
 # Запуск: docker compose --env-file .env up -d
 # С SSO:  docker compose --env-file .env --profile sso up -d
 

@@ -1,5 +1,5 @@
 # =============================================================================
-# IR Timeline — Backend Dockerfile (FastAPI / Python 3.12)
+# IR-Sauron — Backend Dockerfile (FastAPI / Python 3.12)
 # Multi-stage: builder → production → development
 # =============================================================================
 

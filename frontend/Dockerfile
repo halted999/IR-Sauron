@@ -1,5 +1,5 @@
 # =============================================================================
-# IR Timeline — Frontend Dockerfile (React + TypeScript + Vite)
+# IR-Sauron — Frontend Dockerfile (React + TypeScript + Vite)
 # Multi-stage: deps → builder → production (nginx) → development (vite)
 # =============================================================================
 

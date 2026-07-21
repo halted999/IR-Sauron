@@ -1,5 +1,5 @@
 # =============================================================================
-# IR Timeline Constructor — Makefile
+# IR-Sauron — Makefile
 # =============================================================================
 
 COMPOSE      = docker compose --env-file .env
@@ -86,7 +86,7 @@ cert-gen: ## Сгенерировать self-signed сертификат для 
 	  -keyout nginx/ssl/key.pem \
 	  -out    nginx/ssl/cert.pem \
 	  -days   365 \
-	  -subj "/CN=irt.local/O=IR-Timeline/C=RU"
+	  -subj "/CN=irt.local/O=IR-Sauron/C=RU"
 	@echo "Certificates written to nginx/ssl/"
 
 # ── Проверка конфига ─────────────────────────────────────────────────────────

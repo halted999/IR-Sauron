@@ -3,7 +3,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ir_timeline"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ir_sauron"
     redis_url: str = "redis://localhost:6379/0"
 
     minio_endpoint: str = "localhost:9000"

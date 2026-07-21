@@ -84,7 +84,7 @@ async def _ensure_admin_user() -> None:
             admin = User(
                 id=uuid.uuid4(),
                 username="admin",
-                email="admin@ir-timeline.local",
+                email="admin@ir-sauron.local",
                 full_name="System Administrator",
                 hashed_password=get_password_hash("admin"),
                 role=UserRole.admin,
@@ -107,7 +107,7 @@ async def _ensure_admin_user() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
-    logger.info("Starting IR Timeline backend...")
+    logger.info("Starting IR-Sauron backend...")
     async with engine.begin() as conn:
         await _create_enum_types_if_missing(conn)
         await conn.run_sync(Base.metadata.create_all)
@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="IR Timeline Constructor",
+    title="IR-Sauron",
     description=(
         "Backend API for the Incident Response Timeline Constructor — "
         "a collaborative tool for IR/DFIR teams to build, annotate, and export "

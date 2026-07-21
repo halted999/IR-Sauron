@@ -1,12 +1,12 @@
 # =============================================================================
-# IR Timeline — Скрипт подготовки системы
+# IR-Sauron — Скрипт подготовки системы
 # ЗАПУСКАТЬ ОТ ИМЕНИ АДМИНИСТРАТОРА (ПКМ → "Запуск от имени администратора")
 # =============================================================================
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== IR Timeline: подготовка системы ===" -ForegroundColor Cyan
+Write-Host "=== IR-Sauron: подготовка системы ===" -ForegroundColor Cyan
 
 # 1. Включаем WSL2 и Virtual Machine Platform
 Write-Host "`n[1/4] Включение компонентов Windows..." -ForegroundColor Yellow
@@ -44,7 +44,7 @@ Write-Host "Пользователь $currentUser добавлен в групп
 Write-Host "`n=== ГОТОВО ===" -ForegroundColor Green
 Write-Host "Необходима ПЕРЕЗАГРУЗКА компьютера." -ForegroundColor Red
 Write-Host "После перезагрузки откройте Docker Desktop и запустите:" -ForegroundColor White
-Write-Host "  cd $env:USERPROFILE\ir-timeline" -ForegroundColor Cyan
+Write-Host "  cd $env:USERPROFILE\ir-sauron" -ForegroundColor Cyan
 Write-Host "  .\deploy.ps1" -ForegroundColor Cyan
 
 $restart = Read-Host "`nПерезагрузить сейчас? (y/n)"

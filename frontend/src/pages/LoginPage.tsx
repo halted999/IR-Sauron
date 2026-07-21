@@ -38,42 +38,37 @@ export const LoginPage: React.FC = () => {
       <div style={{ width: '100%', maxWidth: 400 }}>
         {/* Logo block */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div
+          <svg
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: 'linear-gradient(135deg, #1f6feb 0%, #58a6ff 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              boxShadow: '0 8px 24px rgba(88,166,255,0.3)',
+              margin: '0 auto',
+              display: 'block',
+              filter: 'drop-shadow(0 0 10px rgba(255,90,31,0.65))',
             }}
           >
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <path
-                d="M4 14h6l3-6 3 12 3-7 2 1h3"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: 4,
-            }}
-          >
-            IR Timeline Constructor
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Конструктор тайлайна инцидентов ИБ
-          </p>
+            <defs>
+              <radialGradient id="sauronGlowLogin" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#ff5a1f" />
+                <stop offset="100%" stopColor="#ff5a1f" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="sauronFireLogin" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ffcf5c" />
+                <stop offset="45%" stopColor="#ff5a1f" />
+                <stop offset="100%" stopColor="#a81300" />
+              </linearGradient>
+            </defs>
+            <circle cx="12" cy="12" r="11" fill="url(#sauronGlowLogin)" opacity="0.45" />
+            <path
+              d="M2 12C2 12 7 5 12 5C17 5 22 12 22 12C22 12 17 19 12 19C7 19 2 12 2 12Z"
+              fill="url(#sauronFireLogin)"
+              stroke="#7a1a00"
+              strokeWidth="0.75"
+            />
+            <ellipse cx="12" cy="12" rx="1.7" ry="6.2" fill="#150402" />
+          </svg>
         </div>
 
         {/* Login form */}
