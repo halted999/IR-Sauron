@@ -24,6 +24,12 @@ export type EventType =
   | 'inference'
   | 'legal_event'
 
+export type ActionType =
+  | 'network_connection'
+  | 'logon_event'
+  | 'file_operation'
+  | 'command_execution'
+
 export type ConfidenceLevel = 'confirmed' | 'corroborated' | 'hypothesis'
 
 export type CommentVisibility = 'internal' | 'report'
@@ -115,6 +121,15 @@ export interface Branch {
   children?: Branch[]
 }
 
+export interface EventLink {
+  id: string
+  source_event_id: string
+  target_event_id: string
+  link_type: string
+  description?: string
+  created_at: string
+}
+
 export interface Event {
   id: string
   branch_id: string
@@ -128,6 +143,7 @@ export interface Event {
   mitre_tactic?: string
   mitre_technique?: string
   mitre_subtechnique?: string
+  action_type?: ActionType | null
   owner_id?: string
   is_deleted: boolean
   sort_order?: number
@@ -136,6 +152,7 @@ export interface Event {
   created_at: string
   artifacts?: Artifact[]
   iocs?: IOC[]
+  linked_events?: EventLink[]
 }
 
 export interface Artifact {
@@ -203,7 +220,14 @@ export interface CreateEventData {
   mitre_tactic?: string | null
   mitre_technique?: string | null
   mitre_subtechnique?: string | null
+  action_type?: ActionType | null
   branch_id?: string
+}
+
+export interface CreateEventLinkData {
+  target_event_id: string
+  link_type: string
+  description?: string
 }
 
 export interface CreateCaseData {
@@ -254,6 +278,13 @@ export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   ir_action: 'Действие команды IR',
   inference: 'Вывод/гипотеза',
   legal_event: 'Юридически значимое событие',
+}
+
+export const ACTION_TYPE_LABELS: Record<ActionType, string> = {
+  network_connection: 'Сетевое соединение',
+  logon_event: 'Событие логона',
+  file_operation: 'Операция с файлами',
+  command_execution: 'Выполнение команды',
 }
 
 export const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {

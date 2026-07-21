@@ -63,6 +63,7 @@ def _event_to_snapshot(event: Event) -> Dict[str, Any]:
         "mitre_tactic": event.mitre_tactic,
         "mitre_technique": event.mitre_technique,
         "mitre_subtechnique": event.mitre_subtechnique,
+        "action_type": event.action_type.value if event.action_type else None,
         "sort_order": event.sort_order,
         "version": event.version,
     }
@@ -151,6 +152,7 @@ async def create_event(
         mitre_tactic=payload.mitre_tactic,
         mitre_technique=payload.mitre_technique,
         mitre_subtechnique=payload.mitre_subtechnique,
+        action_type=payload.action_type,
         sort_order=payload.sort_order,
         version=1,
         created_by=current_user.id,
@@ -439,3 +441,39 @@ async def get_event_links(
         select(EventLink).where(EventLink.target_event_id == event_id)
     )
     return list(outgoing_res.scalars().all()) + list(incoming_res.scalars().all())
+
+
+@router.delete("/events/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event_link(
+    link_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> None:
+    result = await db.execute(select(EventLink).where(EventLink.id == link_id))
+    link = result.scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+
+    source_event = await _get_event_or_404(link.source_event_id, db)
+    branch_res = await db.execute(select(Branch).where(Branch.id == source_event.branch_id))
+    branch = branch_res.scalar_one()
+    await require_case_write_access(branch.case_id, current_user, db)
+
+    await log_action(
+        db=db,
+        user_id=current_user.id,
+        case_id=branch.case_id,
+        action="delete_link",
+        object_type="event_link",
+        object_id=str(link_id),
+        details={
+            "source_event_id": str(link.source_event_id),
+            "target_event_id": str(link.target_event_id),
+            "link_type": link.link_type,
+        },
+        request=request,
+    )
+
+    await db.delete(link)
+    await db.flush()

@@ -55,6 +55,14 @@ class EventType(str, enum.Enum):
     legal_event = "legal_event"
 
 
+class ActionType(str, enum.Enum):
+    """Technical action category used by the event graph's action cards."""
+    network_connection = "network_connection"
+    logon_event = "logon_event"
+    file_operation = "file_operation"
+    command_execution = "command_execution"
+
+
 class ConfidenceLevel(str, enum.Enum):
     confirmed = "confirmed"
     corroborated = "corroborated"
@@ -302,6 +310,9 @@ class Event(Base):
     mitre_tactic: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     mitre_technique: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     mitre_subtechnique: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    action_type: Mapped[Optional[ActionType]] = mapped_column(
+        SAEnum(ActionType, name="action_type", create_type=False), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

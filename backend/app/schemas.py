@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 from app.models import (
     UserRole, CaseStatus, CaseSeverity, BranchStatus,
-    EventType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus
+    EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus
 )
 
 
@@ -256,6 +256,7 @@ class EventCreate(BaseModel):
     mitre_tactic: Optional[str] = Field(None, max_length=100)
     mitre_technique: Optional[str] = Field(None, max_length=100)
     mitre_subtechnique: Optional[str] = Field(None, max_length=100)
+    action_type: Optional[ActionType] = None
     sort_order: int = 0
 
 
@@ -270,6 +271,7 @@ class EventUpdate(BaseModel):
     mitre_tactic: Optional[str] = Field(None, max_length=100)
     mitre_technique: Optional[str] = Field(None, max_length=100)
     mitre_subtechnique: Optional[str] = Field(None, max_length=100)
+    action_type: Optional[ActionType] = None
     sort_order: Optional[int] = None
 
 
@@ -320,6 +322,7 @@ class EventResponse(BaseModel):
     mitre_tactic: Optional[str]
     mitre_technique: Optional[str]
     mitre_subtechnique: Optional[str]
+    action_type: Optional[ActionType]
     sort_order: int
     version: int
     is_deleted: bool

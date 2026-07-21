@@ -49,6 +49,7 @@ async def _create_enum_types_if_missing(conn) -> None:
         "case_severity": ["critical", "high", "medium", "low", "informational"],
         "branch_status": ["hypothesis", "confirmed", "rejected"],
         "event_type": ["attacker_action", "detection", "ir_action", "inference", "legal_event"],
+        "action_type": ["network_connection", "logon_event", "file_operation", "command_execution"],
         "confidence_level": ["confirmed", "corroborated", "hypothesis"],
         "comment_visibility": ["internal", "report"],
         "alert_status": ["new", "triaged", "escalated", "dismissed"],
@@ -73,6 +74,9 @@ async def _add_missing_columns_if_needed(conn) -> None:
             "ALTER TABLE cases ADD COLUMN IF NOT EXISTS "
             "verification_status verification_status NOT NULL DEFAULT 'in_progress'"
         )
+    )
+    await conn.execute(
+        text("ALTER TABLE events ADD COLUMN IF NOT EXISTS action_type action_type NULL")
     )
 
 

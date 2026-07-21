@@ -12,7 +12,7 @@ import { createEvent, updateEvent } from '../api/events'
 import { getBranchComments, createBranchComment } from '../api/branches'
 import { CommentList } from '../components/Comments/CommentList'
 import { AppLayout } from '../components/Layout/AppLayout'
-import { Timeline } from '../components/Timeline/Timeline'
+import { EventGraph } from '../components/Graph/EventGraph'
 import { EventModal } from '../components/Events/EventModal'
 import { EventDetail } from '../components/Events/EventDetail'
 import { BranchPanel } from '../components/Branches/BranchPanel'
@@ -28,7 +28,7 @@ import {
   CASE_STATUS_LABELS, VERIFICATION_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
-type ActiveTab = 'timeline' | 'table' | 'iocs' | 'alerts'
+type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
@@ -122,7 +122,7 @@ export const CasePage: React.FC = () => {
     clearCaseData,
   } = useCaseStore()
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('timeline')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('table')
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
@@ -493,8 +493,8 @@ export const CasePage: React.FC = () => {
           <div style={{ display: 'flex', gap: 0, marginTop: 12 }}>
             {(
               [
-                { key: 'timeline', label: 'Тайлайн' },
                 { key: 'table', label: 'Таблица' },
+                { key: 'graph', label: 'Граф' },
                 { key: 'iocs', label: `IOC (${iocs.length})` },
                 { key: 'alerts', label: 'Алерты' },
               ] as { key: ActiveTab; label: string }[]
@@ -538,19 +538,21 @@ export const CasePage: React.FC = () => {
 
           {/* Center content */}
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeTab === 'timeline' && (
-              <Timeline
+            {activeTab === 'table' && (
+              <EventTable
                 events={events}
-                branches={branches}
                 onEventClick={handleEventClick}
                 selectedEventId={selectedEvent?.id}
               />
             )}
 
-            {activeTab === 'table' && (
-              <EventTable
+            {activeTab === 'graph' && currentBranch && (
+              <EventGraph
                 events={events}
+                branches={branches}
+                branchId={currentBranch.id}
                 onEventClick={handleEventClick}
+                onSaveAction={handleSaveEvent}
                 selectedEventId={selectedEvent?.id}
               />
             )}
@@ -589,7 +591,7 @@ export const CasePage: React.FC = () => {
           )}
 
           {/* Right panel: branch comments */}
-          {(activeTab === 'timeline' || activeTab === 'table') && currentBranch && (
+          {activeTab === 'table' && currentBranch && (
             <div
               style={{
                 width: 280,

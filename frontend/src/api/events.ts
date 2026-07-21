@@ -1,5 +1,7 @@
 import apiClient from './client'
-import type { Event, Artifact, Comment, CreateEventData, CreateCommentData } from '../types'
+import type {
+  Event, Artifact, Comment, CreateEventData, CreateCommentData, EventLink, CreateEventLinkData,
+} from '../types'
 
 export async function getEvents(branchId: string): Promise<Event[]> {
   const response = await apiClient.get<Event[]>(`/branches/${branchId}/events`)
@@ -23,6 +25,18 @@ export async function deleteEvent(eventId: string, reason: string): Promise<void
 export async function getEventHistory(eventId: string): Promise<unknown[]> {
   const response = await apiClient.get<unknown[]>(`/events/${eventId}/history`)
   return response.data
+}
+
+export async function createEventLink(
+  sourceEventId: string,
+  data: CreateEventLinkData,
+): Promise<EventLink> {
+  const response = await apiClient.post<EventLink>(`/events/${sourceEventId}/links`, data)
+  return response.data
+}
+
+export async function deleteEventLink(linkId: string): Promise<void> {
+  await apiClient.delete(`/events/links/${linkId}`)
 }
 
 export async function uploadArtifact(
