@@ -1,8 +1,5 @@
 # IR-Sauron
-
-<img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
-<img width="1642" height="902" alt="image" src="https://github.com/user-attachments/assets/01ab3104-d8f1-4067-b587-5aad22f9a6df" />
-<img width="1587" height="900" alt="image" src="https://github.com/user-attachments/assets/f75ea179-b2c1-46c0-a4ed-d9dbf31c9ab9" />
+<img width="543" height="544" alt="image" src="https://github.com/user-attachments/assets/303726ef-2fab-4bac-89e9-656fac24bf8d" />
 
 
 Конструктор тайлайна расследований инцидентов информационной безопасности (Incident Response Timeline).
@@ -37,3 +34,9 @@ make up      # production-стек
 ```
 
 Frontend будет доступен на `http://localhost:3000` (dev) или через Nginx на `http://localhost` (production).
+
+<img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
+<img width="1908" height="1057" alt="image" src="https://github.com/user-attachments/assets/f2d97dc7-cc6c-484e-a180-d79a4c1f67e4" />
+<img width="1890" height="873" alt="image" src="https://github.com/user-attachments/assets/f85bd3b8-6fe9-42aa-bd5e-4a01ca46d815" />
+<img width="1587" height="900" alt="image" src="https://github.com/user-attachments/assets/f75ea179-b2c1-46c0-a4ed-d9dbf31c9ab9" />
+<img width="1903" height="1026" alt="image" src="https://github.com/user-attachments/assets/dd9d11ff-3665-4ddc-8fdd-38e8986e0925" />
