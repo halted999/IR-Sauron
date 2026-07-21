@@ -8,6 +8,7 @@ import { AlertsPage } from './pages/AlertsPage'
 import { AlertDetailPage } from './pages/AlertDetailPage'
 import { StatisticsPage } from './pages/StatisticsPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { AdminPanelPage } from './pages/AdminPanelPage'
 import { FullPageSpinner } from './components/ui/Spinner'
 import { ToastContainer } from './components/ui/ToastContainer'
 
@@ -42,7 +43,7 @@ const App: React.FC = () => {
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/"
-          element={<Navigate to={accessToken ? '/dashboard' : '/login'} replace />}
+          element={<Navigate to={accessToken ? '/alerts' : '/login'} replace />}
         />
         <Route
           path="/dashboard"
@@ -85,6 +86,14 @@ const App: React.FC = () => {
           }
         />
         <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminPanelPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/cases/:caseId"
           element={
             <ProtectedRoute>
@@ -92,7 +101,7 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/alerts" replace />} />
       </Routes>
       <ToastContainer />
     </BrowserRouter>

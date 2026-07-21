@@ -18,9 +18,10 @@ from app.models import User, UserRole  # noqa: F401 — triggers model registrat
 from app.models import (  # noqa: F401
     Case, CaseParticipant, Branch, Event, EventVersion,
     EventLink, IOC, EventIOC, Artifact, Comment, CommentHistory, AuditLog, Alert,
+    AppSettings,
 )
 
-from app.api.v1 import auth, users, cases, branches, events, artifacts, iocs, comments, alerts
+from app.api.v1 import auth, users, cases, branches, events, artifacts, iocs, comments, alerts, admin
 from app.ws.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,7 @@ app.include_router(artifacts.router, prefix="/v1")
 app.include_router(iocs.router, prefix="/v1")
 app.include_router(comments.router, prefix="/v1")
 app.include_router(alerts.router, prefix="/v1")
+app.include_router(admin.router, prefix="/v1")
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

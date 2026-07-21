@@ -17,7 +17,10 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   accessToken: null,
-  isLoading: false,
+  // Starts true: restoreSession() must finish its localStorage/token check before
+  // ProtectedRoute is allowed to read accessToken, otherwise a page refresh briefly
+  // sees "no token" and bounces to /login before the real session is restored.
+  isLoading: true,
   error: null,
 
   login: async (username: string, password: string) => {

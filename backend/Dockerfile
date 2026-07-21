@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 8 --prefix=/install -r requirements.txt
 
 # ── Stage 2: production ───────────────────────────────────────────────────────
 FROM python:3.12-slim AS production
@@ -23,6 +23,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
+        postgresql-client \
         curl \
     && rm -rf /var/lib/apt/lists/* \
     # Непривилегированный пользователь
@@ -54,12 +55,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         libpq-dev \
+        postgresql-client \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-dev.txt* ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && ([ -f requirements-dev.txt ] && pip install --no-cache-dir -r requirements-dev.txt || true)
+RUN pip install --no-cache-dir --timeout 100 --retries 8 -r requirements.txt \
+    && ([ -f requirements-dev.txt ] && pip install --no-cache-dir --timeout 100 --retries 8 -r requirements-dev.txt || true)
 
 EXPOSE 8000
 

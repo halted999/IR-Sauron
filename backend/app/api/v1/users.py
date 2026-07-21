@@ -125,3 +125,24 @@ async def deactivate_user(
 
     user.is_active = False
     await db.flush()
+
+
+@router.delete("/{user_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_permanently(
+    user_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> None:
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    await db.delete(user)
+    await db.flush()

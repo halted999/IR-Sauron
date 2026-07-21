@@ -559,3 +559,27 @@ class AuditLog(Base):
     # Relationships
     case: Mapped[Optional["Case"]] = relationship("Case", back_populates="audit_logs")
     user: Mapped[Optional["User"]] = relationship("User", back_populates="audit_logs")
+
+
+class AppSettings(Base):
+    """Singleton row (id=1) holding admin-configurable application settings."""
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
+
+    smtp_host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    smtp_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    telegram_bot_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    telegram_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

@@ -469,6 +469,43 @@ class AuditLogEntry(BaseModel):
     ts: datetime
 
 
+# ─── Admin settings ───────────────────────────────────────────────────────────
+
+class AppSettingsUpdate(BaseModel):
+    timezone: Optional[str] = None
+    smtp_host: Optional[str] = Field(None, max_length=255)
+    smtp_port: Optional[int] = Field(None, ge=1, le=65535)
+    smtp_username: Optional[str] = Field(None, max_length=255)
+    smtp_password: Optional[str] = Field(None, max_length=255)
+    smtp_from_email: Optional[str] = Field(None, max_length=255)
+    smtp_use_tls: Optional[bool] = None
+    email_notifications_enabled: Optional[bool] = None
+    telegram_bot_token: Optional[str] = Field(None, max_length=255)
+    telegram_chat_id: Optional[str] = Field(None, max_length=255)
+    telegram_notifications_enabled: Optional[bool] = None
+
+
+class AppSettingsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    timezone: str
+    smtp_host: Optional[str]
+    smtp_port: Optional[int]
+    smtp_username: Optional[str]
+    smtp_password: Optional[str]
+    smtp_from_email: Optional[str]
+    smtp_use_tls: bool
+    email_notifications_enabled: bool
+    telegram_bot_token: Optional[str]
+    telegram_chat_id: Optional[str]
+    telegram_notifications_enabled: bool
+    updated_at: datetime
+
+
+class BackupRequest(BaseModel):
+    password: str = Field(..., min_length=8, max_length=255)
+
+
 # ─── Generic ──────────────────────────────────────────────────────────────────
 
 class MessageResponse(BaseModel):

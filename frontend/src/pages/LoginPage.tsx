@@ -10,7 +10,7 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('')
 
   useEffect(() => {
-    if (accessToken) navigate('/dashboard', { replace: true })
+    if (accessToken) navigate('/alerts', { replace: true })
   }, [accessToken, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,7 +18,7 @@ export const LoginPage: React.FC = () => {
     clearError()
     try {
       await login(username, password)
-      navigate('/dashboard', { replace: true })
+      navigate('/alerts', { replace: true })
     } catch {
       // error is in store
     }
