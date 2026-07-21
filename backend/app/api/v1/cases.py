@@ -17,7 +17,6 @@ from app.models import (
 from app.schemas import (
     AuditLogEntry, CaseCreate, CaseParticipantAdd,
     CaseParticipantResponse, CaseResponse, CaseUpdate,
-    MessageResponse,
 )
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -170,7 +169,6 @@ async def update_case(
     if current_user.role not in (UserRole.admin, UserRole.ir_lead):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-    old_status = case.status
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(case, field, value)
@@ -343,7 +341,7 @@ async def export_case(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> dict:
     from sqlalchemy.orm import selectinload as sl
-    from app.models import Event, IOC
+    from app.models import Event
 
     await require_case_access(case_id, current_user, db)
 

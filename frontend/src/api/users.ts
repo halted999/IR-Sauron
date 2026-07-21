@@ -22,11 +22,6 @@ export async function getUsers(): Promise<User[]> {
   return response.data
 }
 
-export async function getUser(id: string): Promise<User> {
-  const response = await apiClient.get<User>(`/users/${id}`)
-  return response.data
-}
-
 export async function createUser(data: CreateUserData): Promise<User> {
   const response = await apiClient.post<User>('/users', data)
   return response.data

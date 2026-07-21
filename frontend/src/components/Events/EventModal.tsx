@@ -349,7 +349,7 @@ export const EventModal: React.FC<EventModalProps> = ({
                 <input
                   id="mitre-tactic"
                   type="text"
-                  value={form.mitre_tactic}
+                  value={form.mitre_tactic ?? ''}
                   onChange={(e) => setField('mitre_tactic', e.target.value)}
                   placeholder="Initial Access"
                   style={inputStyle}
@@ -362,7 +362,7 @@ export const EventModal: React.FC<EventModalProps> = ({
                 <input
                   id="mitre-technique"
                   type="text"
-                  value={form.mitre_technique}
+                  value={form.mitre_technique ?? ''}
                   onChange={(e) => setField('mitre_technique', e.target.value)}
                   placeholder="T1566"
                   style={inputStyle}
@@ -375,7 +375,7 @@ export const EventModal: React.FC<EventModalProps> = ({
                 <input
                   id="mitre-sub"
                   type="text"
-                  value={form.mitre_subtechnique}
+                  value={form.mitre_subtechnique ?? ''}
                   onChange={(e) => setField('mitre_subtechnique', e.target.value)}
                   placeholder=".001"
                   style={inputStyle}

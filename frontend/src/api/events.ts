@@ -74,11 +74,6 @@ export async function createComment(eventId: string, data: CreateCommentData): P
   return response.data
 }
 
-export async function updateComment(commentId: string, body: string): Promise<Comment> {
-  const response = await apiClient.put<Comment>(`/comments/${commentId}`, { body })
-  return response.data
-}
-
 export async function deleteComment(commentId: string): Promise<void> {
   await apiClient.delete(`/comments/${commentId}`)
 }

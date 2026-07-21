@@ -192,17 +192,6 @@ export interface Comment {
   replies?: Comment[]
 }
 
-export interface AuditEntry {
-  id: number
-  case_id?: string
-  user_id?: string
-  action: string
-  object_type: string
-  object_id?: string
-  details?: Record<string, unknown>
-  ts: string
-}
-
 export interface Token {
   access_token: string
   refresh_token: string
@@ -237,13 +226,6 @@ export interface CreateCaseData {
   incident_discovered_at?: string
   confidentiality_label: string
   external_ticket_id?: string
-}
-
-export interface CreateBranchData {
-  name: string
-  description?: string
-  parent_branch_id?: string
-  branch_point_event_id?: string
 }
 
 export interface CreateIOCData {
@@ -291,12 +273,6 @@ export const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {
   confirmed: 'Подтверждено',
   corroborated: 'Подкреплено',
   hypothesis: 'Гипотеза',
-}
-
-export const BRANCH_STATUS_LABELS: Record<BranchStatus, string> = {
-  hypothesis: 'Гипотеза',
-  confirmed: 'Подтверждена',
-  rejected: 'Отклонена',
 }
 
 export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {

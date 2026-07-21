@@ -15,8 +15,8 @@ import { AppLayout } from '../components/Layout/AppLayout'
 import { EventGraph } from '../components/Graph/EventGraph'
 import { EventModal } from '../components/Events/EventModal'
 import { EventDetail } from '../components/Events/EventDetail'
-import { BranchPanel } from '../components/Branches/BranchPanel'
 import { IOCPanel } from '../components/Cases/IOCPanel'
+import { CaseDescriptionPanel } from '../components/Cases/CaseDescriptionPanel'
 import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -28,7 +28,7 @@ import {
   CASE_STATUS_LABELS, VERIFICATION_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
-type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts'
+type ActiveTab = 'description' | 'table' | 'graph' | 'iocs' | 'alerts'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
@@ -114,7 +114,6 @@ export const CasePage: React.FC = () => {
     fetchBranches,
     fetchEvents,
     fetchIOCs,
-    setCurrentBranch,
     setCurrentCase,
     addEvent,
     updateEventInStore,
@@ -122,7 +121,7 @@ export const CasePage: React.FC = () => {
     clearCaseData,
   } = useCaseStore()
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('table')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('description')
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
@@ -493,6 +492,7 @@ export const CasePage: React.FC = () => {
           <div style={{ display: 'flex', gap: 0, marginTop: 12 }}>
             {(
               [
+                { key: 'description', label: 'Описание' },
                 { key: 'table', label: 'Таблица' },
                 { key: 'graph', label: 'Граф' },
                 { key: 'iocs', label: `IOC (${iocs.length})` },
@@ -523,21 +523,16 @@ export const CasePage: React.FC = () => {
 
         {/* Main content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {/* Left panel: branches */}
-          <div style={{ width: 240, flexShrink: 0, overflow: 'hidden' }}>
-            <BranchPanel
-              branches={branches}
-              currentBranch={currentBranch}
-              caseId={currentCase.id}
-              onBranchSelect={(b) => {
-                setCurrentBranch(b)
-                setSelectedEvent(null)
-              }}
-            />
-          </div>
-
           {/* Center content */}
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {activeTab === 'description' && (
+              <CaseDescriptionPanel
+                currentCase={currentCase}
+                canEdit={canEdit}
+                onUpdate={setCurrentCase}
+              />
+            )}
+
             {activeTab === 'table' && (
               <EventTable
                 events={events}
@@ -549,7 +544,6 @@ export const CasePage: React.FC = () => {
             {activeTab === 'graph' && currentBranch && (
               <EventGraph
                 events={events}
-                branches={branches}
                 branchId={currentBranch.id}
                 onEventClick={handleEventClick}
                 onSaveAction={handleSaveEvent}

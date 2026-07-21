@@ -66,7 +66,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
   }
 
   const toggleSelectAll = () => {
-    setSelectedIds((prev) => (allSelected ? new Set() : new Set(alerts.map((a) => a.id))))
+    setSelectedIds(allSelected ? new Set() : new Set(alerts.map((a) => a.id)))
   }
 
   const handleDetach = async () => {

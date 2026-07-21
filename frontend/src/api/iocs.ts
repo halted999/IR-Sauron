@@ -14,11 +14,3 @@ export async function createIOC(caseId: string, data: CreateIOCData): Promise<IO
 export async function deleteIOC(iocId: string): Promise<void> {
   await apiClient.delete(`/iocs/${iocId}`)
 }
-
-export async function linkIOC(iocId: string, eventId: string): Promise<void> {
-  await apiClient.post(`/iocs/${iocId}/link/${eventId}`)
-}
-
-export async function unlinkIOC(iocId: string, eventId: string): Promise<void> {
-  await apiClient.delete(`/iocs/${iocId}/link/${eventId}`)
-}

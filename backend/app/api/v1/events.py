@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated, List, Optional, Any, Dict
+from typing import Annotated, List, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -10,9 +10,7 @@ from app.core.audit import log_action
 from app.core.auth import get_current_active_user
 from app.core.rbac import require_case_access, require_case_write_access
 from app.database import get_db
-from app.models import (
-    Branch, Event, EventIOC, EventLink, EventVersion, IOC, User, Artifact
-)
+from app.models import Branch, Event, EventIOC, EventLink, EventVersion, User
 from app.schemas import (
     EventCreate, EventDeleteRequest, EventLinkCreate, EventLinkResponse,
     EventResponse, EventUpdate, EventVersionResponse,

@@ -4,13 +4,12 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.audit import log_action
 from app.core.auth import get_current_active_user
 from app.core.rbac import require_case_access, require_case_write_access
 from app.database import get_db
-from app.models import Branch, BranchStatus, Case, Event, User, UserRole
+from app.models import Branch, BranchStatus, Case, Event, User
 from app.schemas import BranchCreate, BranchResponse, BranchTreeResponse, BranchUpdate, MessageResponse
 from app.ws.manager import manager, MSG_BRANCH_STATUS_CHANGED
 

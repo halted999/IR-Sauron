@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import type { Event, Branch, EventLink, ActionType, CreateEventData } from '../../types'
+import type { Event, EventLink, ActionType, CreateEventData } from '../../types'
 import { ACTION_TYPE_LABELS } from '../../types'
 import { createEventLink, deleteEventLink } from '../../api/events'
 import { useCaseStore } from '../../store/case'
@@ -12,7 +12,6 @@ import { ActionCardModal } from './ActionCardModal'
 
 interface EventGraphProps {
   events: Event[]
-  branches: Branch[]
   branchId: string
   onEventClick: (event: Event) => void
   onSaveAction: (data: CreateEventData) => Promise<void>
@@ -51,7 +50,6 @@ type Position = { x: number; y: number }
 
 export const EventGraph: React.FC<EventGraphProps> = ({
   events,
-  branches,
   branchId,
   onEventClick,
   onSaveAction,
@@ -113,12 +111,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
       (l) => positions[l.source_event_id] && positions[l.target_event_id],
     )
   }, [activeEvents, positions])
-
-  const eventById = useMemo(() => {
-    const map = new Map<string, Event>()
-    activeEvents.forEach((e) => map.set(e.id, e))
-    return map
-  }, [activeEvents])
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number): Position => {
@@ -300,7 +292,7 @@ export const EventGraph: React.FC<EventGraphProps> = ({
 
         <div style={{ marginLeft: 'auto' }}>
           <Button variant="primary" size="sm" onClick={() => setShowActionModal(true)}>
-            + Добавить действие
+            + Добавить факт
           </Button>
         </div>
       </div>
@@ -556,7 +548,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
         isOpen={showActionModal}
         onClose={() => setShowActionModal(false)}
         onSave={onSaveAction}
-        branches={branches}
         defaultBranchId={branchId}
       />
 

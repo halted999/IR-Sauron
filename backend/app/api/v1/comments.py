@@ -11,7 +11,7 @@ from app.core.auth import get_current_active_user
 from app.core.rbac import require_case_access, require_case_write_access
 from app.database import get_db
 from app.models import Branch, Comment, CommentHistory, Event, User, UserRole
-from app.schemas import CommentCreate, CommentResponse, CommentUpdate, MessageResponse
+from app.schemas import CommentCreate, CommentResponse, CommentUpdate
 from app.ws.manager import manager, MSG_COMMENT_ADDED
 
 router = APIRouter(tags=["comments"])

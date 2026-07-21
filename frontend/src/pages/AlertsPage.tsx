@@ -125,10 +125,7 @@ export const AlertsPage: React.FC = () => {
   }
 
   const toggleSelectAll = () => {
-    setSelectedIds((prev) => {
-      if (allSelected) return new Set()
-      return new Set(selectableAlerts.map((a) => a.id))
-    })
+    setSelectedIds(allSelected ? new Set() : new Set(selectableAlerts.map((a) => a.id)))
   }
 
   const handleBulkEscalate = async () => {

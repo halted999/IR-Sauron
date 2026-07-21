@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_active_user
-from app.database import get_db
 from app.models import User, UserRole, CaseParticipant
 
 

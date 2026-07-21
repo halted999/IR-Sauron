@@ -4,7 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator
 
-from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession

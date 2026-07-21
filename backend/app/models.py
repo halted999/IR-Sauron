@@ -1,12 +1,12 @@
 import uuid
 import enum
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, List
 
 from sqlalchemy import (
-    String, Text, Boolean, Integer, DateTime, Float,
-    ForeignKey, Enum as SAEnum, JSON, UniqueConstraint, Index,
-    func, text
+    String, Text, Boolean, Integer, DateTime,
+    ForeignKey, Enum as SAEnum, UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
