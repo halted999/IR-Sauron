@@ -1,5 +1,10 @@
 # IR-Sauron
 
+<img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
+<img width="1642" height="902" alt="image" src="https://github.com/user-attachments/assets/01ab3104-d8f1-4067-b587-5aad22f9a6df" />
+<img width="1587" height="900" alt="image" src="https://github.com/user-attachments/assets/f75ea179-b2c1-46c0-a4ed-d9dbf31c9ab9" />
+
+
 Конструктор тайлайна расследований инцидентов информационной безопасности (Incident Response Timeline).
 
 Приложение помогает IR-команде вести дела по инцидентам: принимать алерты в очередь триажа, эскалировать их в дела (по одному или сразу пачкой), восстанавливать хронологию атаки на интерактивном таймлайне с ветками версий, размечать события по MITRE ATT&CK, прикреплять артефакты и IOC, обсуждать события в комментариях и выгружать дело в JSON для отчётности.
