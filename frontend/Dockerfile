@@ -38,7 +38,7 @@ COPY nginx.static.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:80/ || exit 1
+    CMD wget -qO- http://127.0.0.1:80/ || exit 1
 
 # ── Stage 4: development (Vite dev server с HMR) ─────────────────────────────
 FROM node:20-alpine AS development

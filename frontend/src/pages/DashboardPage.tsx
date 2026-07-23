@@ -13,6 +13,7 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
+import { Pagination } from '../components/ui/Pagination'
 import type { Case, CaseStatus, CaseSeverity, CreateCaseData, VerificationStatus } from '../types'
 import {
   CASE_STATUS_LABELS, CASE_SEVERITY_LABELS, VERIFICATION_STATUS_LABELS,
@@ -52,20 +53,40 @@ export const DashboardPage: React.FC = () => {
   const { user } = useAuthStore()
   const { theme } = useThemeStore()
   const toast = useToastStore()
-  const { cases, isLoading, fetchCases } = useCaseStore()
+  const { cases, total, isLoading, fetchCases } = useCaseStore()
 
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
   const [showModal, setShowModal] = useState(false)
   const [editingCase, setEditingCase] = useState<Case | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   useEffect(() => {
-    const params: { status?: string; severity?: string } = {}
+    const params: { status?: string; severity?: string; skip?: number; limit?: number } = {
+      skip: (page - 1) * pageSize,
+      limit: pageSize,
+    }
     if (filterStatus !== 'all') params.status = filterStatus
     if (filterSeverity !== 'all') params.severity = filterSeverity
     fetchCases(params).catch(() => toast.error('Ошибка загрузки дел'))
-  }, [filterStatus, filterSeverity]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterStatus, filterSeverity, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFilterStatusChange = (v: string) => {
+    setFilterStatus(v)
+    setPage(1)
+  }
+
+  const handleFilterSeverityChange = (v: string) => {
+    setFilterSeverity(v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size)
+    setPage(1)
+  }
 
   const handleSaveCase = async (data: CreateCaseData) => {
     try {
@@ -167,7 +188,7 @@ export const DashboardPage: React.FC = () => {
             </label>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => handleFilterStatusChange(e.target.value)}
               style={{ width: 150 }}
             >
               <option value="all">Все статусы</option>
@@ -191,7 +212,7 @@ export const DashboardPage: React.FC = () => {
             </label>
             <select
               value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
+              onChange={(e) => handleFilterSeverityChange(e.target.value)}
               style={{ width: 160 }}
             >
               <option value="all">Все</option>
@@ -364,6 +385,14 @@ export const DashboardPage: React.FC = () => {
             </table>
           </div>
         )}
+
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </div>
 
       <CaseModal

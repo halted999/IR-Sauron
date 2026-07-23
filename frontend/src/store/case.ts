@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import type { Case, Branch, Event, IOC } from '../types'
-import { getCases as apiGetCases, getCase as apiGetCase } from '../api/cases'
+import { getCasesPaged, getCase as apiGetCase } from '../api/cases'
+import type { CasesParams } from '../api/cases'
 import { getBranches as apiGetBranches } from '../api/branches'
 import { getEvents as apiGetEvents } from '../api/events'
 import { getIOCs as apiGetIOCs } from '../api/iocs'
 
 interface CaseState {
   cases: Case[]
+  total: number
   currentCase: Case | null
   branches: Branch[]
   currentBranch: Branch | null
@@ -15,7 +17,7 @@ interface CaseState {
   isLoading: boolean
   error: string | null
 
-  fetchCases: (params?: { status?: string; severity?: string }) => Promise<void>
+  fetchCases: (params?: CasesParams) => Promise<void>
   fetchCase: (id: string) => Promise<void>
   setCurrentCase: (c: Case | null) => void
   fetchBranches: (caseId: string) => Promise<void>
@@ -34,6 +36,7 @@ interface CaseState {
 
 export const useCaseStore = create<CaseState>((set, get) => ({
   cases: [],
+  total: 0,
   currentCase: null,
   branches: [],
   currentBranch: null,
@@ -45,8 +48,8 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   fetchCases: async (params) => {
     set({ isLoading: true, error: null })
     try {
-      const cases = await apiGetCases(params)
-      set({ cases, isLoading: false })
+      const { items, total } = await getCasesPaged(params)
+      set({ cases: items, total, isLoading: false })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Ошибка загрузки дел'
       set({ isLoading: false, error: message })

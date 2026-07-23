@@ -87,6 +87,16 @@ class VerificationStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class EventSourceType(str, enum.Enum):
+    elastic = "elastic"
+    thehive = "thehive"
+
+
+class AlertRuleAction(str, enum.Enum):
+    suppress = "suppress"
+    escalate = "escalate"
+
+
 # ─── Models ───────────────────────────────────────────────────────────────────
 
 class User(Base):
@@ -115,6 +125,50 @@ class User(Base):
     case_participations: Mapped[List["CaseParticipant"]] = relationship("CaseParticipant", back_populates="user")
     audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user")
     comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="author", foreign_keys="Comment.author_id")
+    api_keys: Mapped[List["UserApiKey"]] = relationship(
+        "UserApiKey",
+        back_populates="user",
+        foreign_keys="UserApiKey.user_id",
+        cascade="all, delete-orphan",
+    )
+    created_api_keys: Mapped[List["UserApiKey"]] = relationship(
+        "UserApiKey",
+        back_populates="created_by_user",
+        foreign_keys="UserApiKey.created_by",
+    )
+
+
+class UserApiKey(Base):
+    __tablename__ = "user_api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(24), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="api_keys",
+        foreign_keys=[user_id],
+    )
+    created_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        back_populates="created_api_keys",
+        foreign_keys=[created_by],
+    )
 
 
 class Case(Base):
@@ -216,6 +270,19 @@ class Alert(Base):
     case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
     )
+    event_source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_sources.id", ondelete="SET NULL"), nullable=True
+    )
+    external_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    external_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -228,6 +295,7 @@ class Alert(Base):
 
     # Relationships
     case: Mapped[Optional["Case"]] = relationship("Case", foreign_keys=[case_id])
+    event_source: Mapped[Optional["EventSource"]] = relationship("EventSource", foreign_keys=[event_source_id])
     created_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])
 
 
@@ -594,3 +662,81 @@ class AppSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class EventSource(Base):
+    """Configured external system (Elastic, TheHive) polled for alerts via API."""
+    __tablename__ = "event_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[EventSourceType] = mapped_column(
+        SAEnum(EventSourceType, name="event_source_type", create_type=False), nullable=False
+    )
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    verify_ssl: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auth_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    auth_secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    last_sync_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_sync_alert_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Relationships
+    creator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])
+
+
+class AlertRule(Base):
+    """Auto-triage rule: matching alerts get suppressed or escalated automatically."""
+    __tablename__ = "alert_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    match_source: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    match_severity: Mapped[Optional[CaseSeverity]] = mapped_column(
+        SAEnum(CaseSeverity, name="case_severity", create_type=False), nullable=True
+    )
+    match_title_contains: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    match_description_contains: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+
+    action: Mapped[AlertRuleAction] = mapped_column(
+        SAEnum(AlertRuleAction, name="alert_rule_action", create_type=False), nullable=False
+    )
+    target_case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
+    )
+
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    applied_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Relationships
+    target_case: Mapped[Optional["Case"]] = relationship("Case", foreign_keys=[target_case_id])
+    creator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])

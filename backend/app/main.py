@@ -18,10 +18,14 @@ from app.models import User, UserRole  # noqa: F401 — triggers model registrat
 from app.models import (  # noqa: F401
     Case, CaseParticipant, Branch, Event, EventVersion,
     EventLink, IOC, EventIOC, Artifact, Comment, CommentHistory, AuditLog, Alert,
-    AppSettings,
+    AppSettings, EventSource, AlertRule,
 )
 
-from app.api.v1 import auth, users, cases, branches, events, artifacts, iocs, comments, alerts, admin
+from app.api.v1 import (
+    auth, users, cases, branches, events, artifacts, iocs, comments, alerts, admin,
+    event_sources, alert_rules,
+)
+from app.services.event_source_scheduler import start_scheduler, stop_scheduler
 from app.ws.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -54,6 +58,8 @@ async def _create_enum_types_if_missing(conn) -> None:
         "comment_visibility": ["internal", "report"],
         "alert_status": ["new", "triaged", "escalated", "dismissed"],
         "verification_status": ["in_progress", "confirmed", "rejected"],
+        "event_source_type": ["elastic", "thehive"],
+        "alert_rule_action": ["suppress", "escalate"],
     }
     for name, values in enums.items():
         quoted = ", ".join(f"'{v}'" for v in values)
@@ -77,6 +83,48 @@ async def _add_missing_columns_if_needed(conn) -> None:
     )
     await conn.execute(
         text("ALTER TABLE events ADD COLUMN IF NOT EXISTS action_type action_type NULL")
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_source_id UUID NULL "
+            "REFERENCES event_sources(id) ON DELETE SET NULL"
+        )
+    )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS external_id VARCHAR(500) NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS external_url VARCHAR(1000) NULL")
+    )
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_source_external ON alerts "
+            "(event_source_id, external_id) WHERE event_source_id IS NOT NULL AND external_id IS NOT NULL"
+        )
+    )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false")
+    )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL")
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS deleted_by UUID NULL "
+            "REFERENCES users(id) ON DELETE SET NULL"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS assigned_to UUID NULL "
+            "REFERENCES users(id) ON DELETE SET NULL"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS "
+            "match_description_contains VARCHAR(1000) NULL"
+        )
     )
 
 
@@ -128,11 +176,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not connect to MinIO at startup: %s", exc)
 
+    start_scheduler()
+
     logger.info("Startup complete.")
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -159,6 +210,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
@@ -173,6 +225,8 @@ app.include_router(iocs.router, prefix="/v1")
 app.include_router(comments.router, prefix="/v1")
 app.include_router(alerts.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")
+app.include_router(event_sources.router, prefix="/v1")
+app.include_router(alert_rules.router, prefix="/v1")
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

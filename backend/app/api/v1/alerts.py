@@ -1,23 +1,25 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import log_action
 from app.core.auth import get_current_active_user
-from app.core.rbac import require_write_access
+from app.core.rbac import require_admin, require_write_access
 from app.database import get_db
 from app.models import (
     Alert, AlertStatus, Branch, BranchStatus, Case, CaseParticipant,
     CaseSeverity, CaseStatus, ConfidenceLevel, Event, EventType, User,
 )
 from app.schemas import (
-    AlertBulkEscalateRequest, AlertCreate, AlertEscalateRequest, AlertResponse, AlertUpdate,
-    CaseResponse,
+    AlertAssignRequest, AlertBulkEscalateRequest, AlertCreate, AlertEscalateRequest,
+    AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse,
 )
+from app.services.alert_rules import apply_matching_rules
 
 _SEVERITY_ORDER = [
     CaseSeverity.critical, CaseSeverity.high, CaseSeverity.medium,
@@ -60,22 +62,31 @@ async def _get_alert_or_404(alert_id: uuid.UUID, db: AsyncSession) -> Alert:
 
 @router.get("", response_model=List[AlertResponse])
 async def list_alerts(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     alert_status: Optional[AlertStatus] = Query(None, alias="status"),
     severity: Optional[CaseSeverity] = None,
     case_id: Optional[uuid.UUID] = None,
+    deleted: bool = False,
     skip: int = 0,
     limit: int = 50,
 ) -> List[Alert]:
-    query = select(Alert)
+    filters = [Alert.is_deleted == deleted]
     if alert_status:
-        query = query.where(Alert.status == alert_status)
+        filters.append(Alert.status == alert_status)
     if severity:
-        query = query.where(Alert.severity == severity)
+        filters.append(Alert.severity == severity)
     if case_id:
-        query = query.where(Alert.case_id == case_id)
-    query = query.order_by(Alert.created_at.desc()).offset(skip).limit(limit)
+        filters.append(Alert.case_id == case_id)
+
+    count_result = await db.execute(select(func.count()).select_from(select(Alert.id).where(*filters).subquery()))
+    response.headers["X-Total-Count"] = str(count_result.scalar_one())
+
+    query = (
+        select(Alert).where(*filters)
+        .order_by(Alert.created_at.desc(), Alert.id.desc()).offset(skip).limit(limit)
+    )
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -110,6 +121,8 @@ async def create_alert(
         details={"title": alert.title, "severity": alert.severity.value},
         request=request,
     )
+
+    await apply_matching_rules(db, alert, current_user.id)
 
     await db.flush()
     await db.refresh(alert)
@@ -339,3 +352,126 @@ async def detach_alert(
     await db.flush()
     await db.refresh(alert)
     return alert
+
+
+# ── Bulk soft-delete / restore / purge ───────────────────────────────────────
+
+@router.post("/delete-bulk", response_model=List[AlertResponse])
+async def delete_alerts_bulk(
+    payload: AlertIdsRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_write_access)],
+) -> List[Alert]:
+    result = await db.execute(
+        select(Alert).where(
+            Alert.id.in_(payload.alert_ids),
+            Alert.is_deleted.is_(False),
+            Alert.status != AlertStatus.escalated,
+        )
+    )
+    alerts = list(result.scalars().all())
+    now = datetime.now(timezone.utc)
+    for alert in alerts:
+        alert.is_deleted = True
+        alert.deleted_at = now
+        alert.deleted_by = current_user.id
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="soft_delete", object_type="alert",
+        object_id=None, details={"alert_ids": [str(a.id) for a in alerts]}, request=request,
+    )
+
+    await db.flush()
+    for alert in alerts:
+        await db.refresh(alert)
+    return alerts
+
+
+@router.post("/restore-bulk", response_model=List[AlertResponse])
+async def restore_alerts_bulk(
+    payload: AlertIdsRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_write_access)],
+) -> List[Alert]:
+    result = await db.execute(
+        select(Alert).where(Alert.id.in_(payload.alert_ids), Alert.is_deleted.is_(True))
+    )
+    alerts = list(result.scalars().all())
+    for alert in alerts:
+        alert.is_deleted = False
+        alert.deleted_at = None
+        alert.deleted_by = None
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="restore", object_type="alert",
+        object_id=None, details={"alert_ids": [str(a.id) for a in alerts]}, request=request,
+    )
+
+    await db.flush()
+    for alert in alerts:
+        await db.refresh(alert)
+    return alerts
+
+
+@router.post("/purge-bulk", status_code=status.HTTP_204_NO_CONTENT)
+async def purge_alerts_bulk(
+    payload: AlertIdsRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> None:
+    result = await db.execute(
+        select(Alert).where(Alert.id.in_(payload.alert_ids), Alert.is_deleted.is_(True))
+    )
+    alerts = list(result.scalars().all())
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="purge", object_type="alert",
+        object_id=None, details={"alert_ids": [str(a.id) for a in alerts]}, request=request,
+    )
+
+    for alert in alerts:
+        await db.delete(alert)
+    await db.flush()
+
+
+# ── Bulk assign ──────────────────────────────────────────────────────────────
+
+@router.post("/assign-bulk", response_model=List[AlertResponse])
+async def assign_alerts_bulk(
+    payload: AlertAssignRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_write_access)],
+) -> List[Alert]:
+    if payload.user_id is not None:
+        assignee_result = await db.execute(
+            select(User).where(User.id == payload.user_id, User.is_active.is_(True))
+        )
+        if assignee_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignee not found")
+
+    result = await db.execute(
+        select(Alert).where(Alert.id.in_(payload.alert_ids), Alert.is_deleted.is_(False))
+    )
+    alerts = list(result.scalars().all())
+    for alert in alerts:
+        alert.assigned_to = payload.user_id
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="assign" if payload.user_id else "unassign", object_type="alert",
+        object_id=None,
+        details={"alert_ids": [str(a.id) for a in alerts], "assigned_to": str(payload.user_id) if payload.user_id else None},
+        request=request,
+    )
+
+    await db.flush()
+    for alert in alerts:
+        await db.refresh(alert)
+    return alerts

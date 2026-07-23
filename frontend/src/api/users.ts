@@ -1,6 +1,13 @@
 import apiClient from './client'
 import type { User, UserRole } from '../types'
 
+export interface AssignableUser {
+  id: string
+  username: string
+  full_name?: string
+  role: UserRole
+}
+
 export interface UpdateUserData {
   email?: string
   full_name?: string
@@ -19,6 +26,11 @@ export interface CreateUserData {
 
 export async function getUsers(): Promise<User[]> {
   const response = await apiClient.get<User[]>('/users')
+  return response.data
+}
+
+export async function getAssignableUsers(): Promise<AssignableUser[]> {
+  const response = await apiClient.get<AssignableUser[]>('/users/assignable')
   return response.data
 }
 

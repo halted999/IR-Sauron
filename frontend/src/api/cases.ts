@@ -13,6 +13,17 @@ export async function getCases(params?: CasesParams): Promise<Case[]> {
   return response.data
 }
 
+export interface PagedResult<T> {
+  items: T[]
+  total: number
+}
+
+export async function getCasesPaged(params?: CasesParams): Promise<PagedResult<Case>> {
+  const response = await apiClient.get<Case[]>('/cases', { params })
+  const total = Number(response.headers['x-total-count'] ?? response.data.length)
+  return { items: response.data, total }
+}
+
 export async function getCase(id: string): Promise<Case> {
   const response = await apiClient.get<Case>(`/cases/${id}`)
   return response.data

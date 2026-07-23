@@ -2,11 +2,16 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { getAlert, updateAlert, escalateAlert } from '../api/alerts'
+import { getAlert, updateAlert, escalateAlert, assignAlertsBulk } from '../api/alerts'
+import { getAssignableUsers } from '../api/users'
+import type { AssignableUser } from '../api/users'
 import { useAlertStore } from '../store/alert'
 import { useAuthStore } from '../store/auth'
 import { useToastStore } from '../store/toast'
 import { AppLayout } from '../components/Layout/AppLayout'
+import { AssignUserModal } from '../components/Alerts/AssignUserModal'
+import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
+import type { AlertRuleFromSelectionResult } from '../api/alertRules'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
@@ -38,6 +43,10 @@ export const AlertDetailPage: React.FC = () => {
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isActing, setIsActing] = useState(false)
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [showRuleModal, setShowRuleModal] = useState(false)
 
   useEffect(() => {
     if (!alertId) return
@@ -48,6 +57,18 @@ export const AlertDetailPage: React.FC = () => {
       .finally(() => setIsLoading(false))
   }, [alertId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    getAssignableUsers()
+      .then(setAssignableUsers)
+      .catch(() => setAssignableUsers([]))
+  }, [])
+
+  const assigneeLabel = (userId?: string): string => {
+    if (!userId) return '—'
+    const u = assignableUsers.find((au) => au.id === userId)
+    return u ? u.full_name || u.username : '—'
+  }
+
   const canWrite =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
@@ -57,20 +78,6 @@ export const AlertDetailPage: React.FC = () => {
   const applyUpdate = (updated: Alert) => {
     setAlert(updated)
     updateAlertInStore(updated)
-  }
-
-  const handleTriage = async () => {
-    if (!alert) return
-    setIsActing(true)
-    try {
-      const updated = await updateAlert(alert.id, { status: 'triaged' })
-      applyUpdate(updated)
-      toast.success('Алерт взят в работу')
-    } catch {
-      toast.error('Ошибка обновления алерта')
-    } finally {
-      setIsActing(false)
-    }
   }
 
   const handleDismiss = async () => {
@@ -101,6 +108,21 @@ export const AlertDetailPage: React.FC = () => {
       toast.error('Ошибка эскалации алерта')
     } finally {
       setIsActing(false)
+    }
+  }
+
+  const handleAssign = async (userId: string) => {
+    if (!alert) return
+    setIsAssigning(true)
+    try {
+      const [updated] = await assignAlertsBulk([alert.id], userId)
+      applyUpdate(updated)
+      toast.success('Алерт назначен')
+      setShowAssignModal(false)
+    } catch {
+      toast.error('Ошибка назначения')
+    } finally {
+      setIsAssigning(false)
     }
   }
 
@@ -194,6 +216,12 @@ export const AlertDetailPage: React.FC = () => {
 
           {canWrite && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(true)}>
+                Назначить
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowRuleModal(true)}>
+                В правило
+              </Button>
               {alert.status === 'escalated' ? (
                 alert.case_id && (
                   <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
@@ -202,11 +230,6 @@ export const AlertDetailPage: React.FC = () => {
                 )
               ) : alert.status === 'dismissed' ? null : (
                 <>
-                  {alert.status === 'new' && (
-                    <Button variant="secondary" size="sm" onClick={handleTriage} isLoading={isActing}>
-                      В работу
-                    </Button>
-                  )}
                   <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
                     Эскалировать
                   </Button>
@@ -231,6 +254,7 @@ export const AlertDetailPage: React.FC = () => {
           }}
         >
           <Field label="Источник">{alert.source ?? '—'}</Field>
+          <Field label="Назначен">{assigneeLabel(alert.assigned_to)}</Field>
           <Field label="Описание">
             {alert.description ? (
               <span style={{ whiteSpace: 'pre-wrap' }}>{alert.description}</span>
@@ -258,6 +282,27 @@ export const AlertDetailPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <AssignUserModal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        onAssign={handleAssign}
+        isLoading={isAssigning}
+      />
+
+      <AlertRuleFormModal
+        isOpen={showRuleModal}
+        onClose={() => setShowRuleModal(false)}
+        selectedAlerts={alert ? [alert] : []}
+        onSaved={(result: AlertRuleFromSelectionResult | undefined) => {
+          toast.success(
+            result ? `Правило создано, применено к ${result.applied_count} алертам` : 'Правило создано',
+          )
+          if (alertId) {
+            getAlert(alertId).then(applyUpdate).catch(() => undefined)
+          }
+        }}
+      />
     </AppLayout>
   )
 }

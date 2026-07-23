@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from app.models import (
     UserRole, CaseStatus, CaseSeverity, BranchStatus,
-    EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus
+    EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus,
+    EventSourceType, AlertRuleAction,
 )
 
 
@@ -197,9 +198,122 @@ class AlertResponse(BaseModel):
     source: Optional[str]
     status: AlertStatus
     case_id: Optional[uuid.UUID]
+    event_source_id: Optional[uuid.UUID]
+    external_id: Optional[str]
+    external_url: Optional[str]
+    is_deleted: bool
+    deleted_at: Optional[datetime]
+    assigned_to: Optional[uuid.UUID]
     created_by: Optional[uuid.UUID]
     created_at: datetime
     updated_at: datetime
+
+
+class AlertIdsRequest(BaseModel):
+    alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+
+
+class AlertAssignRequest(BaseModel):
+    alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+    user_id: Optional[uuid.UUID] = None
+
+
+# ─── Alert Rules ──────────────────────────────────────────────────────────────
+
+class AlertRuleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    match_source: Optional[str] = Field(None, max_length=255)
+    match_severity: Optional[CaseSeverity] = None
+    match_title_contains: Optional[str] = Field(None, max_length=500)
+    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    action: AlertRuleAction
+    target_case_id: Optional[uuid.UUID] = None
+    is_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _validate(self) -> "AlertRuleCreate":
+        if not (
+            self.match_source or self.match_severity
+            or self.match_title_contains or self.match_description_contains
+        ):
+            raise ValueError(
+                "Укажите хотя бы один признак для сопоставления "
+                "(источник, критичность, заголовок или описание)"
+            )
+        if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
+            raise ValueError("target_case_id недопустим для действия 'suppress'")
+        return self
+
+
+class AlertRuleUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    match_source: Optional[str] = Field(None, max_length=255)
+    match_severity: Optional[CaseSeverity] = None
+    match_title_contains: Optional[str] = Field(None, max_length=500)
+    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    action: Optional[AlertRuleAction] = None
+    target_case_id: Optional[uuid.UUID] = None
+    is_enabled: Optional[bool] = None
+
+
+class AlertRuleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    match_source: Optional[str]
+    match_severity: Optional[CaseSeverity]
+    match_title_contains: Optional[str]
+    match_description_contains: Optional[str]
+    action: AlertRuleAction
+    target_case_id: Optional[uuid.UUID]
+    is_enabled: bool
+    applied_count: int
+    last_applied_at: Optional[datetime]
+    created_by: Optional[uuid.UUID]
+    created_at: datetime
+    updated_at: datetime
+
+
+class AlertRuleFromSelectionRequest(BaseModel):
+    alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=255)
+    match_source: Optional[str] = Field(None, max_length=255)
+    match_severity: Optional[CaseSeverity] = None
+    match_title_contains: Optional[str] = Field(None, max_length=500)
+    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    action: AlertRuleAction
+    target_case_id: Optional[uuid.UUID] = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "AlertRuleFromSelectionRequest":
+        if not (
+            self.match_source or self.match_severity
+            or self.match_title_contains or self.match_description_contains
+        ):
+            raise ValueError(
+                "Укажите хотя бы один признак для сопоставления "
+                "(источник, критичность, заголовок или описание)"
+            )
+        if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
+            raise ValueError("target_case_id недопустим для действия 'suppress'")
+        return self
+
+
+class AlertRuleFromSelectionResponse(BaseModel):
+    rule: AlertRuleResponse
+    applied_count: int
+
+
+class AlertRuleMatchPreviewRequest(BaseModel):
+    match_source: Optional[str] = Field(None, max_length=255)
+    match_severity: Optional[CaseSeverity] = None
+    match_title_contains: Optional[str] = Field(None, max_length=500)
+    match_description_contains: Optional[str] = Field(None, max_length=1000)
+
+
+class AlertRuleMatchPreviewResponse(BaseModel):
+    matching_count: int
 
 
 # ─── Branch ───────────────────────────────────────────────────────────────────
@@ -507,6 +621,63 @@ class AppSettingsResponse(BaseModel):
 
 class BackupRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=255)
+
+
+# ─── Event Sources (Elastic / TheHive) ────────────────────────────────────────
+
+class EventSourceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    source_type: EventSourceType
+    base_url: str = Field(..., min_length=1, max_length=500)
+    verify_ssl: bool = True
+    auth_username: Optional[str] = Field(None, max_length=255)
+    auth_secret: Optional[str] = Field(None, max_length=2000)
+    config: Optional[Dict[str, Any]] = None
+    is_enabled: bool = True
+    poll_interval_seconds: int = Field(300, ge=30, le=86400)
+
+
+class EventSourceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    base_url: Optional[str] = Field(None, min_length=1, max_length=500)
+    verify_ssl: Optional[bool] = None
+    auth_username: Optional[str] = Field(None, max_length=255)
+    auth_secret: Optional[str] = Field(None, max_length=2000)
+    config: Optional[Dict[str, Any]] = None
+    is_enabled: Optional[bool] = None
+    poll_interval_seconds: Optional[int] = Field(None, ge=30, le=86400)
+
+
+class EventSourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    source_type: EventSourceType
+    base_url: str
+    verify_ssl: bool
+    auth_username: Optional[str]
+    has_secret: bool
+    config: Optional[Dict[str, Any]]
+    is_enabled: bool
+    poll_interval_seconds: int
+    last_synced_at: Optional[datetime]
+    last_sync_status: Optional[str]
+    last_sync_message: Optional[str]
+    last_sync_alert_count: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+
+
+class EventSourceTestResult(BaseModel):
+    ok: bool
+    message: str
+
+
+class EventSourceSyncResult(BaseModel):
+    ok: bool
+    message: str
+    new_alerts: int
 
 
 # ─── Generic ──────────────────────────────────────────────────────────────────

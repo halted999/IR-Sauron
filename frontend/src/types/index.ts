@@ -51,6 +51,9 @@ export interface Alert {
   source?: string
   status: AlertStatus
   case_id?: string
+  is_deleted: boolean
+  deleted_at?: string
+  assigned_to?: string
   created_by?: string
   created_at: string
   updated_at: string

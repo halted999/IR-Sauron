@@ -16,18 +16,30 @@ import {
 import type { AppSettings } from '../api/admin'
 import { getUsers, createUser, updateUser, deactivateUser, deleteUserPermanently } from '../api/users'
 import type { CreateUserData, UpdateUserData } from '../api/users'
+import {
+  getEventSources, createEventSource, updateEventSource, deleteEventSource,
+  testEventSourceConnection, syncEventSourceNow,
+} from '../api/eventSources'
+import type { EventSource, CreateEventSourceData, UpdateEventSourceData } from '../api/eventSources'
+import { EventSourceFormModal } from '../components/Admin/EventSourceFormModal'
 import type { User, UserRole } from '../types'
 import { ROLE_LABELS } from '../types'
 
-type Section = 'notifications' | 'users' | 'roles' | 'timezone' | 'backup'
+type Section = 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup'
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'notifications', label: 'Оповещения' },
   { key: 'users', label: 'Пользователи' },
   { key: 'roles', label: 'Роли и группы' },
+  { key: 'event_sources', label: 'Источники алертов' },
   { key: 'timezone', label: 'Временная зона' },
   { key: 'backup', label: 'Импорт/бекап' },
 ]
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  elastic: 'Elastic',
+  thehive: 'TheHive',
+}
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   admin: 'Полный доступ ко всем делам и разделам, управление пользователями и настройками системы.',
@@ -113,6 +125,7 @@ export const AdminPanelPage: React.FC = () => {
             {activeSection === 'notifications' && <NotificationsSection />}
             {activeSection === 'users' && <UsersSection />}
             {activeSection === 'roles' && <RolesSection />}
+            {activeSection === 'event_sources' && <EventSourcesSection />}
             {activeSection === 'timezone' && <TimezoneSection />}
             {activeSection === 'backup' && <BackupSection />}
           </div>
@@ -504,6 +517,223 @@ const RolesSection: React.FC = () => (
     </div>
   </div>
 )
+
+// ─── Event Sources (Elastic / TheHive) ────────────────────────────────────────
+
+const EventSourcesSection: React.FC = () => {
+  const toast = useToastStore()
+  const [sources, setSources] = useState<EventSource[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editingSource, setEditingSource] = useState<EventSource | null>(null)
+  const [deletingSource, setDeletingSource] = useState<EventSource | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const load = () => {
+    setIsLoading(true)
+    getEventSources()
+      .then(setSources)
+      .catch(() => toast.error('Ошибка загрузки источников алертов'))
+      .finally(() => setIsLoading(false))
+  }
+
+  useEffect(load, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async (data: CreateEventSourceData | UpdateEventSourceData) => {
+    try {
+      if (editingSource) {
+        const updated = await updateEventSource(editingSource.id, data as UpdateEventSourceData)
+        setSources((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+        toast.success('Источник обновлён')
+      } else {
+        const created = await createEventSource(data as CreateEventSourceData)
+        setSources((prev) => [created, ...prev])
+        toast.success(`Источник «${created.name}» создан`)
+      }
+    } catch {
+      toast.error('Ошибка сохранения источника')
+      throw new Error('save failed')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deletingSource) return
+    try {
+      await deleteEventSource(deletingSource.id)
+      setSources((prev) => prev.filter((s) => s.id !== deletingSource.id))
+      toast.success('Источник удалён')
+    } catch {
+      toast.error('Ошибка удаления источника')
+    } finally {
+      setDeletingSource(null)
+    }
+  }
+
+  const handleTest = async (source: EventSource) => {
+    setBusyId(source.id)
+    try {
+      const result = await testEventSourceConnection(source.id)
+      if (result.ok) {
+        toast.success(result.message)
+      } else {
+        toast.error(result.message)
+      }
+    } catch {
+      toast.error('Ошибка проверки соединения')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleSyncNow = async (source: EventSource) => {
+    setBusyId(source.id)
+    try {
+      const result = await syncEventSourceNow(source.id)
+      toast[result.ok ? 'success' : 'error'](result.message)
+      load()
+    } catch {
+      toast.error('Ошибка синхронизации')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Источники алертов"
+        description="Подключения к Elasticsearch и TheHive для автоматического получения алертов по API. Новые алерты появляются в общем списке «Оповещения»."
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            setEditingSource(null)
+            setShowModal(true)
+          }}
+        >
+          + Добавить источник
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+          <Spinner size={26} />
+        </div>
+      ) : sources.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '20px 0' }}>
+          Источники ещё не настроены.
+        </div>
+      ) : (
+        <div
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        >
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-tertiary)' }}>
+                <Th>Имя</Th>
+                <Th>Тип</Th>
+                <Th>URL</Th>
+                <Th>Статус</Th>
+                <Th>Последняя синхронизация</Th>
+                <Th>Действия</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((s, idx) => (
+                <tr key={s.id} style={{ borderTop: idx > 0 ? '1px solid var(--border)' : 'none' }}>
+                  <Td>
+                    <div style={{ fontWeight: 500 }}>{s.name}</div>
+                  </Td>
+                  <Td>{SOURCE_TYPE_LABELS[s.source_type] ?? s.source_type}</Td>
+                  <Td>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{s.base_url}</span>
+                  </Td>
+                  <Td>
+                    <Badge
+                      color={s.is_enabled ? 'green' : 'gray'}
+                      label={s.is_enabled ? 'Включён' : 'Отключён'}
+                      size="sm"
+                    />
+                  </Td>
+                  <Td>
+                    {s.last_synced_at ? (
+                      <div>
+                        <div>{format(new Date(s.last_synced_at), 'dd.MM.yyyy HH:mm', { locale: ru })}</div>
+                        <div style={{ fontSize: 11, color: s.last_sync_status === 'error' ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                          {s.last_sync_message}
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Ещё не запускалась</span>
+                    )}
+                  </Td>
+                  <Td>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => {
+                          setEditingSource(s)
+                          setShowModal(true)
+                        }}
+                        style={linkBtnStyle}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        onClick={() => handleTest(s)}
+                        disabled={busyId === s.id}
+                        style={linkBtnStyle}
+                      >
+                        Проверить соединение
+                      </button>
+                      <button
+                        onClick={() => handleSyncNow(s)}
+                        disabled={busyId === s.id}
+                        style={linkBtnStyle}
+                      >
+                        Синхронизировать сейчас
+                      </button>
+                      <button
+                        onClick={() => setDeletingSource(s)}
+                        style={{ ...linkBtnStyle, color: 'var(--danger)' }}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <EventSourceFormModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={handleSave}
+        source={editingSource}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deletingSource}
+        onClose={() => setDeletingSource(null)}
+        onConfirm={handleDelete}
+        title="Удалить источник алертов"
+        message={`Источник «${deletingSource?.name}» будет удалён. Уже полученные алерты останутся в системе.`}
+        confirmLabel="Удалить"
+        isDanger
+      />
+    </div>
+  )
+}
 
 // ─── Timezone ────────────────────────────────────────────────────────────────────
 

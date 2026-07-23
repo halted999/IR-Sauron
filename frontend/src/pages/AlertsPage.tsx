@@ -5,12 +5,23 @@ import { ru } from 'date-fns/locale'
 import { useAlertStore } from '../store/alert'
 import { useToastStore } from '../store/toast'
 import { useAuthStore } from '../store/auth'
-import { createAlert, updateAlert, escalateAlert, escalateAlertsBulk } from '../api/alerts'
+import {
+  createAlert, updateAlert, escalateAlert, escalateAlertsBulk,
+  deleteAlertsBulk, restoreAlertsBulk, purgeAlertsBulk, assignAlertsBulk,
+} from '../api/alerts'
+import { getAssignableUsers } from '../api/users'
+import type { AssignableUser } from '../api/users'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { AlertModal } from '../components/Alerts/AlertModal'
+import { AlertRulesModal } from '../components/Alerts/AlertRulesModal'
+import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
+import { AssignUserModal } from '../components/Alerts/AssignUserModal'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Pagination } from '../components/ui/Pagination'
+import type { AlertsParams } from '../api/alerts'
 import type { Alert, AlertStatus, CaseSeverity, CreateAlertData } from '../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../types'
 
@@ -33,22 +44,74 @@ export const AlertsPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const toast = useToastStore()
-  const { alerts, isLoading, fetchAlerts, addAlert, updateAlertInStore } = useAlertStore()
+  const { alerts, total, isLoading, fetchAlerts, addAlert, updateAlertInStore, removeAlertsFromStore } = useAlertStore()
 
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [showModal, setShowModal] = useState(false)
   const [escalatingId, setEscalatingId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isBulkEscalating, setIsBulkEscalating] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
+  const [showRuleFromSelection, setShowRuleFromSelection] = useState(false)
+  const [showArchive, setShowArchive] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<string[] | null>(null)
+  const [purgingIds, setPurgingIds] = useState<string[] | null>(null)
+  const [isBulkBusy, setIsBulkBusy] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [isAssigning, setIsAssigning] = useState(false)
 
   useEffect(() => {
-    const params: { status?: AlertStatus; severity?: CaseSeverity } = {}
+    getAssignableUsers()
+      .then(setAssignableUsers)
+      .catch(() => setAssignableUsers([]))
+  }, [])
+
+  const assigneeLabel = (userId?: string): string => {
+    if (!userId) return '—'
+    const u = assignableUsers.find((au) => au.id === userId)
+    return u ? u.full_name || u.username : '—'
+  }
+
+  const buildParams = (): AlertsParams => {
+    const params: AlertsParams = {
+      deleted: showArchive,
+      skip: (page - 1) * pageSize,
+      limit: pageSize,
+    }
     if (filterStatus !== 'all') params.status = filterStatus as AlertStatus
     if (filterSeverity !== 'all') params.severity = filterSeverity as CaseSeverity
-    fetchAlerts(params).catch(() => toast.error('Ошибка загрузки алертов'))
+    return params
+  }
+
+  useEffect(() => {
+    fetchAlerts(buildParams()).catch(() => toast.error('Ошибка загрузки алертов'))
     setSelectedIds(new Set())
-  }, [filterStatus, filterSeverity]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterStatus, filterSeverity, showArchive, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFilterStatusChange = (v: string) => {
+    setFilterStatus(v)
+    setPage(1)
+  }
+
+  const handleFilterSeverityChange = (v: string) => {
+    setFilterSeverity(v)
+    setPage(1)
+  }
+
+  const handleToggleArchive = () => {
+    setShowArchive((v) => !v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size)
+    setPage(1)
+  }
 
   const canWrite =
     user?.role === 'admin' ||
@@ -107,6 +170,13 @@ export const AlertsPage: React.FC = () => {
   const filteredAlerts = alerts.filter((a) => {
     if (filterStatus !== 'all' && a.status !== filterStatus) return false
     if (filterSeverity !== 'all' && a.severity !== filterSeverity) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      const dateStr = format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru }).toLowerCase()
+      const statusStr = ALERT_STATUS_LABELS[a.status].toLowerCase()
+      const descriptionStr = (a.description ?? '').toLowerCase()
+      if (!dateStr.includes(q) && !statusStr.includes(q) && !descriptionStr.includes(q)) return false
+    }
     return true
   })
 
@@ -147,9 +217,87 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
+  const handleConfirmDelete = async () => {
+    if (!deletingIds || deletingIds.length === 0) return
+    setIsBulkBusy(true)
+    try {
+      await deleteAlertsBulk(deletingIds)
+      removeAlertsFromStore(deletingIds)
+      toast.success(`Удалено алертов: ${deletingIds.length}`)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Ошибка удаления алертов')
+    } finally {
+      setIsBulkBusy(false)
+      setDeletingIds(null)
+    }
+  }
+
+  const handleBulkRestore = async () => {
+    if (selectedIds.size === 0) return
+    setIsBulkBusy(true)
+    try {
+      const ids = Array.from(selectedIds)
+      await restoreAlertsBulk(ids)
+      removeAlertsFromStore(ids)
+      toast.success(`Восстановлено алертов: ${ids.length}`)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Ошибка восстановления алертов')
+    } finally {
+      setIsBulkBusy(false)
+    }
+  }
+
+  const handleConfirmPurge = async () => {
+    if (!purgingIds || purgingIds.length === 0) return
+    setIsBulkBusy(true)
+    try {
+      await purgeAlertsBulk(purgingIds)
+      removeAlertsFromStore(purgingIds)
+      toast.success(`Удалено навсегда: ${purgingIds.length}`)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Ошибка окончательного удаления')
+    } finally {
+      setIsBulkBusy(false)
+      setPurgingIds(null)
+    }
+  }
+
+  const handleAssign = async (userId: string) => {
+    if (selectedIds.size === 0) return
+    setIsAssigning(true)
+    try {
+      const ids = Array.from(selectedIds)
+      const updated = await assignAlertsBulk(ids, userId)
+      updated.forEach((a) => updateAlertInStore(a))
+      toast.success(`Назначено алертов: ${updated.length}`)
+      setSelectedIds(new Set())
+      setShowAssignModal(false)
+    } catch {
+      toast.error('Ошибка назначения')
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
   return (
     <AppLayout>
       <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+        {/* Sticky control area: page header + filters stay together under the app nav bar */}
+        <div
+          style={{
+            position: 'sticky',
+            top: 56,
+            zIndex: 90,
+            background: 'var(--bg-primary)',
+            paddingTop: 24,
+            marginTop: -24,
+            paddingBottom: 20,
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
         {/* Page header */}
         <div
           style={{
@@ -167,18 +315,47 @@ export const AlertsPage: React.FC = () => {
           </div>
           {canWrite && (
             <div style={{ display: 'flex', gap: 8 }}>
-              {selectedIds.size > 0 && (
-                <Button
-                  variant="primary"
-                  onClick={handleBulkEscalate}
-                  isLoading={isBulkEscalating}
-                >
-                  Создать дело ({selectedIds.size})
+              {selectedIds.size > 0 && !showArchive && (
+                <>
+                  <Button variant="primary" onClick={handleBulkEscalate} isLoading={isBulkEscalating}>
+                    Создать дело ({selectedIds.size})
+                  </Button>
+                  <Button variant="secondary" onClick={() => setShowRuleFromSelection(true)}>
+                    В правило ({selectedIds.size})
+                  </Button>
+                  <Button variant="secondary" onClick={() => setShowAssignModal(true)}>
+                    Назначить ({selectedIds.size})
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => setDeletingIds(Array.from(selectedIds))}
+                    isLoading={isBulkBusy}
+                  >
+                    Удалить ({selectedIds.size})
+                  </Button>
+                </>
+              )}
+              {selectedIds.size > 0 && showArchive && (
+                <>
+                  <Button variant="primary" onClick={handleBulkRestore} isLoading={isBulkBusy}>
+                    Восстановить ({selectedIds.size})
+                  </Button>
+                  {user?.role === 'admin' && (
+                    <Button
+                      variant="danger"
+                      onClick={() => setPurgingIds(Array.from(selectedIds))}
+                      isLoading={isBulkBusy}
+                    >
+                      Удалить навсегда ({selectedIds.size})
+                    </Button>
+                  )}
+                </>
+              )}
+              {!showArchive && (
+                <Button variant="primary" onClick={() => setShowModal(true)}>
+                  + Добавить алерт
                 </Button>
               )}
-              <Button variant="primary" onClick={() => setShowModal(true)}>
-                + Добавить алерт
-              </Button>
             </div>
           )}
         </div>
@@ -188,18 +365,24 @@ export const AlertsPage: React.FC = () => {
           style={{
             display: 'flex',
             gap: 12,
-            marginBottom: 20,
             alignItems: 'center',
             flexWrap: 'wrap',
           }}
         >
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Поиск по дате, статусу, описанию…"
+            style={{ width: 260 }}
+          />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap', margin: 0 }}>
               Статус:
             </label>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => handleFilterStatusChange(e.target.value)}
               style={{ width: 150 }}
             >
               <option value="all">Все статусы</option>
@@ -216,7 +399,7 @@ export const AlertsPage: React.FC = () => {
             </label>
             <select
               value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
+              onChange={(e) => handleFilterSeverityChange(e.target.value)}
               style={{ width: 160 }}
             >
               <option value="all">Все</option>
@@ -227,9 +410,29 @@ export const AlertsPage: React.FC = () => {
               ))}
             </select>
           </div>
+          {canWrite && (
+            <Button variant="secondary" size="sm" onClick={() => setShowRulesModal(true)}>
+              Правила алертов
+            </Button>
+          )}
+          <button
+            onClick={handleToggleArchive}
+            style={{
+              background: 'none',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '5px 10px',
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            {showArchive ? '← К активным алертам' : 'Архив удалённых'}
+          </button>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 'auto' }}>
             Найдено: {filteredAlerts.length}
           </span>
+        </div>
         </div>
 
         {/* Table */}
@@ -281,6 +484,7 @@ export const AlertsPage: React.FC = () => {
                   <Th>Источник</Th>
                   <Th>Критичность</Th>
                   <Th>Статус</Th>
+                  <Th>Назначено</Th>
                   <Th>Создан</Th>
                   {canWrite && <Th>Действия</Th>}
                 </tr>
@@ -373,12 +577,19 @@ export const AlertsPage: React.FC = () => {
                         size="sm"
                       />
                     </Td>
+                    <Td style={{ fontSize: 12, color: a.assigned_to ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                      {assigneeLabel(a.assigned_to)}
+                    </Td>
                     <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
                     </Td>
                     {canWrite && (
                       <Td>
-                        {a.status === 'escalated' ? (
+                        {a.is_deleted ? (
+                          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                            Удалён {a.deleted_at ? format(new Date(a.deleted_at), 'dd.MM.yyyy HH:mm', { locale: ru }) : ''}
+                          </span>
+                        ) : a.status === 'escalated' ? (
                           a.case_id ? (
                             <button
                               onClick={() => navigate(`/cases/${a.case_id}`)}
@@ -421,9 +632,62 @@ export const AlertsPage: React.FC = () => {
             </table>
           </div>
         )}
+
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </div>
 
       <AlertModal isOpen={showModal} onClose={() => setShowModal(false)} onSave={handleSaveAlert} />
+
+      <AlertRulesModal isOpen={showRulesModal} onClose={() => setShowRulesModal(false)} />
+
+      <AlertRuleFormModal
+        isOpen={showRuleFromSelection}
+        onClose={() => setShowRuleFromSelection(false)}
+        selectedAlerts={alerts.filter((a) => selectedIds.has(a.id))}
+        onSaved={(result) => {
+          toast.success(
+            result ? `Правило создано, применено к ${result.applied_count} алертам` : 'Правило создано',
+          )
+          setSelectedIds(new Set())
+          fetchAlerts(buildParams()).catch(() => undefined)
+        }}
+      />
+
+      <AssignUserModal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        onAssign={handleAssign}
+        isLoading={isAssigning}
+        title={`Назначить (${selectedIds.size})`}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deletingIds}
+        onClose={() => setDeletingIds(null)}
+        onConfirm={handleConfirmDelete}
+        title="Удалить алерты"
+        message={`Выбранные алерты (${deletingIds?.length ?? 0}) будут перемещены в архив. Их можно будет восстановить.`}
+        confirmLabel="Удалить"
+        isDanger
+        isLoading={isBulkBusy}
+      />
+
+      <ConfirmDialog
+        isOpen={!!purgingIds}
+        onClose={() => setPurgingIds(null)}
+        onConfirm={handleConfirmPurge}
+        title="Удалить навсегда"
+        message={`Выбранные алерты (${purgingIds?.length ?? 0}) будут удалены безвозвратно. Это действие нельзя отменить.`}
+        confirmLabel="Удалить навсегда"
+        isDanger
+        isLoading={isBulkBusy}
+      />
     </AppLayout>
   )
 }

@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_active_user, get_password_hash
-from app.core.rbac import require_admin
+from app.core.rbac import require_admin, require_write_access
 from app.database import get_db
 from app.models import User, UserRole
-from app.schemas import UserCreate, UserResponse, UserUpdate
+from app.schemas import UserCreate, UserResponse, UserShort, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -57,6 +57,17 @@ async def create_user(
     await db.flush()
     await db.refresh(user)
     return user
+
+
+@router.get("/assignable", response_model=List[UserShort])
+async def list_assignable_users(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_write_access)],
+) -> List[User]:
+    result = await db.execute(
+        select(User).where(User.is_active.is_(True)).order_by(User.username)
+    )
+    return list(result.scalars().all())
 
 
 @router.get("/{user_id}", response_model=UserResponse)

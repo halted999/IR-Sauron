@@ -1,8 +1,12 @@
+import base64
+import hashlib
 import os
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+from app.config import settings
 
 _SALT_LEN = 16
 _NONCE_LEN = 12
@@ -31,3 +35,22 @@ def decrypt_bytes(password: str, blob: bytes) -> bytes:
     )
     key = _derive_key(password, salt)
     return AESGCM(key).decrypt(nonce, ciphertext, None)
+
+
+def _static_key() -> bytes:
+    """Server-side key derived from settings.secret_key, for at-rest secrets that
+    must be decrypted without any user-supplied password (e.g. integration API keys)."""
+    return hashlib.sha256(settings.secret_key.encode("utf-8")).digest()
+
+
+def encrypt_secret(plaintext: str) -> str:
+    """Encrypt with AES-256-GCM using the server's static key. Output: base64(nonce || ciphertext+tag)."""
+    nonce = os.urandom(_NONCE_LEN)
+    ciphertext = AESGCM(_static_key()).encrypt(nonce, plaintext.encode("utf-8"), None)
+    return base64.b64encode(nonce + ciphertext).decode("ascii")
+
+
+def decrypt_secret(token: str) -> str:
+    raw = base64.b64decode(token)
+    nonce, ciphertext = raw[:_NONCE_LEN], raw[_NONCE_LEN:]
+    return AESGCM(_static_key()).decrypt(nonce, ciphertext, None).decode("utf-8")

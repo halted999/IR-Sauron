@@ -1,8 +1,8 @@
 import uuid
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,6 +45,7 @@ async def _get_case_or_404(case_id: uuid.UUID, db: AsyncSession) -> Case:
 
 @router.get("", response_model=List[CaseResponse])
 async def list_cases(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     case_status: Optional[CaseStatus] = Query(None, alias="status"),
@@ -53,11 +54,7 @@ async def list_cases(
     skip: int = 0,
     limit: int = 50,
 ) -> List[Case]:
-    query = (
-        select(Case)
-        .options(*_case_options())
-        .where(Case.is_deleted == False)
-    )
+    filters = [Case.is_deleted == False]  # noqa: E712
 
     # Non-admin/lead users see only cases where they participate
     if current_user.role not in (UserRole.admin, UserRole.ir_lead):
@@ -66,16 +63,24 @@ async def list_cases(
             .where(CaseParticipant.user_id == current_user.id)
             .scalar_subquery()
         )
-        query = query.where(Case.id.in_(subq))
+        filters.append(Case.id.in_(subq))
 
     if case_status:
-        query = query.where(Case.status == case_status)
+        filters.append(Case.status == case_status)
     if severity:
-        query = query.where(Case.severity == severity)
+        filters.append(Case.severity == severity)
     if ir_lead_id:
-        query = query.where(Case.ir_lead_id == ir_lead_id)
+        filters.append(Case.ir_lead_id == ir_lead_id)
 
-    query = query.order_by(Case.created_at.desc()).offset(skip).limit(limit)
+    count_result = await db.execute(select(func.count()).select_from(select(Case.id).where(*filters).subquery()))
+    response.headers["X-Total-Count"] = str(count_result.scalar_one())
+
+    query = (
+        select(Case)
+        .options(*_case_options())
+        .where(*filters)
+        .order_by(Case.created_at.desc(), Case.id.desc()).offset(skip).limit(limit)
+    )
     result = await db.execute(query)
     return list(result.scalars().all())
 
