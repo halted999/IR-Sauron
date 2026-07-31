@@ -39,6 +39,16 @@ make up      # production-стек
 
 Frontend будет доступен на `http://localhost:3000` (dev) или через Nginx на `http://localhost` (production).
 
+## Требования к установке
+
+- **Docker** 24+ и **Docker Compose** v2 (команда `docker compose`, а не устаревший отдельный `docker-compose`).
+- Linux-хост (проверено на Debian/Ubuntu) или Docker Desktop (Windows/macOS) для локальной разработки.
+- Свободные порты **80** и **443** на хосте (Nginx) — либо переназначьте их в `docker-compose.yml`.
+- Ориентировочно не менее **2 vCPU** и **4 ГБ RAM**, **10 ГБ** свободного места на диске — для тестового стенда с небольшим объёмом данных; под боевую нагрузку ресурсы стоит считать исходя из реального объёма алертов и дел.
+- TLS-сертификат в `nginx/ssl/cert.pem` и `nginx/ssl/key.pem` — по умолчанию самоподписанный для разработки, для продакшена замените на сертификат от доверенного CA.
+- Заполненный `.env` (скопируйте из `.env.example`): как минимум пароли PostgreSQL/Redis/MinIO и `SECRET_KEY` для подписи JWT.
+- Клиент `pg_dump`/`pg_restore` внутри backend-образа зафиксирован на версии **PostgreSQL 16** (через репозиторий PGDG) — под версию сервера `postgres:16-alpine` из docker-compose. При восстановлении бэкапа базы данными снаружи контейнера используйте клиент той же версии, иначе `pg_restore` может завершиться с ошибкой несовместимости.
+
 <img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
 <img width="1908" height="1057" alt="image" src="https://github.com/user-attachments/assets/f2d97dc7-cc6c-484e-a180-d79a4c1f67e4" />
 <img width="1890" height="873" alt="image" src="https://github.com/user-attachments/assets/f85bd3b8-6fe9-42aa-bd5e-4a01ca46d815" />
