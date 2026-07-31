@@ -50,7 +50,7 @@ async def _create_enum_types_if_missing(conn) -> None:
         "user_role": [
             "admin", "ir_lead", "investigator", "observer", "external_contractor",
         ],
-        "case_status": ["open", "active", "review", "closed"],
+        "case_status": ["open", "in_progress", "confirmed", "rejected"],
         "case_severity": ["critical", "high", "medium", "low", "informational"],
         "branch_status": ["hypothesis", "confirmed", "rejected"],
         "event_type": ["attacker_action", "detection", "ir_action", "inference", "legal_event"],
@@ -58,7 +58,6 @@ async def _create_enum_types_if_missing(conn) -> None:
         "confidence_level": ["confirmed", "corroborated", "hypothesis"],
         "comment_visibility": ["internal", "report"],
         "alert_status": ["new", "triaged", "escalated", "dismissed"],
-        "verification_status": ["in_progress", "confirmed", "rejected"],
         "event_source_type": ["elastic", "thehive"],
         "alert_rule_action": ["suppress", "escalate", "assign_tag"],
     }
@@ -70,6 +69,13 @@ async def _create_enum_types_if_missing(conn) -> None:
     # Enum values added after the type already existed on a deployed database
     # (CREATE TYPE above is a no-op there) must be added explicitly.
     await conn.execute(text("ALTER TYPE alert_rule_action ADD VALUE IF NOT EXISTS 'assign_tag'"))
+    # case_status merged with the old separate verification_status field —
+    # add the new values so existing deployments can migrate their data
+    # (see _migrate_legacy_case_status, run in a later, separate transaction —
+    # Postgres forbids using a freshly-added enum value in the same transaction).
+    await conn.execute(text("ALTER TYPE case_status ADD VALUE IF NOT EXISTS 'in_progress'"))
+    await conn.execute(text("ALTER TYPE case_status ADD VALUE IF NOT EXISTS 'confirmed'"))
+    await conn.execute(text("ALTER TYPE case_status ADD VALUE IF NOT EXISTS 'rejected'"))
 
 
 async def _add_missing_columns_if_needed(conn) -> None:
@@ -79,12 +85,6 @@ async def _add_missing_columns_if_needed(conn) -> None:
     already been created (e.g. by an earlier deploy), it must be added here
     so existing databases pick it up on next startup.
     """
-    await conn.execute(
-        text(
-            "ALTER TABLE cases ADD COLUMN IF NOT EXISTS "
-            "verification_status verification_status NOT NULL DEFAULT 'in_progress'"
-        )
-    )
     await conn.execute(
         text("ALTER TABLE events ADD COLUMN IF NOT EXISTS action_type action_type NULL")
     )
@@ -146,6 +146,28 @@ async def _add_missing_columns_if_needed(conn) -> None:
     await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS impact_summary TEXT NULL"))
     await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS attribution TEXT NULL"))
     await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS report_notes TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS incident_number VARCHAR(100) NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS detection_source TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS trigger_rule TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS severity_justification TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS executive_summary TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS attack_vector TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS exploited_vulnerability TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS tooling_used TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS affected_assets TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS confidentiality_impact TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS integrity_impact TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS availability_impact TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS financial_reputational_damage TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS sla_breach TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS containment_actions TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS eradication_actions TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS recovery_actions TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS lessons_worked_well TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS lessons_to_improve TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS new_detection_rules_needed TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS recommendations TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS approval_notes TEXT NULL"))
     await conn.execute(
         text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS action_type action_type NULL")
     )
@@ -154,6 +176,37 @@ async def _add_missing_columns_if_needed(conn) -> None:
     )
     await conn.execute(
         text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS mitre_technique VARCHAR(255) NULL")
+    )
+
+
+async def _migrate_legacy_case_status(conn) -> None:
+    """
+    case_status used to carry open/active/review/closed while a separate
+    verification_status column tracked in_progress/confirmed/rejected. Both
+    are now merged into a single case_status value. Must run in a
+    transaction separate from the one that adds the new case_status enum
+    values (see _create_enum_types_if_missing) — Postgres refuses to use a
+    freshly added enum value within the same transaction that added it.
+    """
+    has_verification_column = await conn.scalar(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'cases' AND column_name = 'verification_status'"
+        )
+    )
+    if not has_verification_column:
+        return  # fresh install — nothing to migrate
+
+    await conn.execute(
+        text(
+            "UPDATE cases SET status = (CASE "
+            "WHEN verification_status = 'confirmed' THEN 'confirmed' "
+            "WHEN verification_status = 'rejected' THEN 'rejected' "
+            "WHEN status = 'open' THEN 'open' "
+            "ELSE 'in_progress' "
+            "END)::case_status "
+            "WHERE status IN ('active', 'review', 'closed')"
+        )
     )
 
 
@@ -213,6 +266,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await _create_enum_types_if_missing(conn)
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns_if_needed(conn)
+    async with engine.begin() as conn:
+        await _migrate_legacy_case_status(conn)
     await _ensure_admin_user()
     await _seed_role_permissions()
 

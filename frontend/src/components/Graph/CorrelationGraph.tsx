@@ -116,13 +116,25 @@ function computeLayout(
   return positions
 }
 
+type EntityKind = Exclude<GraphNodeKind, 'alert'>
+
 export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges, onAlertClick }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(0.55)
   const [pan, setPan] = useState<Position>({ x: 40, y: 20 })
   const [isPanning, setIsPanning] = useState(false)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [hiddenKinds, setHiddenKinds] = useState<Set<EntityKind>>(new Set())
   const dragStartClient = useRef<Position>({ x: 0, y: 0 })
+
+  const toggleKind = (kind: EntityKind) => {
+    setHiddenKinds((prev) => {
+      const next = new Set(prev)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+  }
 
   const nodeById = useMemo(() => {
     const map = new Map<string, CorrelationGraphNode>()
@@ -130,7 +142,20 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     return map
   }, [nodes])
 
+  // Layout is computed once from the full (unfiltered) graph so toggling a
+  // category filter just hides nodes/edges in place instead of reshuffling
+  // everything else's position.
   const positions = useMemo(() => computeLayout(nodes, edges), [nodes, edges])
+
+  const visibleEdges = useMemo(
+    () => edges.filter((e) => !hiddenKinds.has(e.kind)),
+    [edges, hiddenKinds],
+  )
+  const visibleNodes = useMemo(() => {
+    if (hiddenKinds.size === 0) return nodes
+    const connectedAlertIds = new Set(visibleEdges.map((e) => e.target))
+    return nodes.filter((n) => (n.kind === 'alert' ? connectedAlertIds.has(n.id) : !hiddenKinds.has(n.kind)))
+  }, [nodes, visibleEdges, hiddenKinds])
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -200,9 +225,28 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginLeft: 8, flexWrap: 'wrap' }}>
-          <Legend color={ENTITY_COLOR.ip} label="IP-адрес" shape="diamond" />
-          <Legend color={ENTITY_COLOR.account} label="Учётная запись" shape="diamond" />
-          <Legend color={ENTITY_COLOR.file} label="Файл" shape="diamond" />
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Категории:</span>
+          <Legend
+            color={ENTITY_COLOR.ip}
+            label="IP-адрес"
+            shape="diamond"
+            active={!hiddenKinds.has('ip')}
+            onClick={() => toggleKind('ip')}
+          />
+          <Legend
+            color={ENTITY_COLOR.account}
+            label="Учётная запись"
+            shape="diamond"
+            active={!hiddenKinds.has('account')}
+            onClick={() => toggleKind('account')}
+          />
+          <Legend
+            color={ENTITY_COLOR.file}
+            label="Файл"
+            shape="diamond"
+            active={!hiddenKinds.has('file')}
+            onClick={() => toggleKind('file')}
+          />
           <Legend color="var(--text-secondary)" label="Алерт" shape="circle" />
         </div>
       </div>
@@ -237,7 +281,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             height={CANVAS_H}
             style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}
           >
-            {edges.map((e, idx) => {
+            {visibleEdges.map((e, idx) => {
               const s = positions[e.source]
               const t = positions[e.target]
               if (!s || !t) return null
@@ -257,7 +301,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             })}
           </svg>
 
-          {nodes.map((node) => {
+          {visibleNodes.map((node) => {
             const pos = positions[node.id]
             if (!pos) return null
             const isAlert = node.kind === 'alert'
@@ -300,7 +344,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             )
           })}
 
-          {nodes.map((node) => {
+          {visibleNodes.map((node) => {
             const pos = positions[node.id]
             if (!pos) return null
             const isAlert = node.kind === 'alert'
@@ -334,7 +378,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             )
           })}
 
-          {nodes.length === 0 && (
+          {visibleNodes.length === 0 && (
             <div style={{ position: 'absolute', left: 40, top: 40, color: 'var(--text-secondary)', fontSize: 14 }}>
               Нет связей для отображения за выбранный период
             </div>
@@ -368,8 +412,32 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
   )
 }
 
-const Legend: React.FC<{ color: string; label: string; shape: 'circle' | 'diamond' }> = ({ color, label, shape }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+const Legend: React.FC<{
+  color: string
+  label: string
+  shape: 'circle' | 'diamond'
+  active?: boolean
+  onClick?: () => void
+}> = ({ color, label, shape, active = true, onClick }) => (
+  <button
+    onClick={onClick}
+    disabled={!onClick}
+    title={onClick ? (active ? `Скрыть «${label}»` : `Показать «${label}»`) : undefined}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 11,
+      color: 'var(--text-secondary)',
+      background: 'none',
+      border: 'none',
+      padding: 0,
+      fontFamily: 'inherit',
+      opacity: active ? 1 : 0.4,
+      cursor: onClick ? 'pointer' : 'default',
+      textDecoration: !active ? 'line-through' : 'none',
+    }}
+  >
     <span
       style={{
         display: 'inline-block',
@@ -381,7 +449,7 @@ const Legend: React.FC<{ color: string; label: string; shape: 'circle' | 'diamon
       }}
     />
     {label}
-  </div>
+  </button>
 )
 
 const toolbarBtnStyle: React.CSSProperties = {

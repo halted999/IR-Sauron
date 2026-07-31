@@ -16,20 +16,19 @@ import { EventGraph } from '../components/Graph/EventGraph'
 import { EventModal } from '../components/Events/EventModal'
 import { EventDetail } from '../components/Events/EventDetail'
 import { IOCPanel } from '../components/Cases/IOCPanel'
-import { CaseDescriptionPanel } from '../components/Cases/CaseDescriptionPanel'
 import { CaseReportPanel } from '../components/Cases/CaseReportPanel'
 import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
-import type { Event, CaseStatus, CaseSeverity, CreateEventData, VerificationStatus } from '../types'
+import type { Event, CaseStatus, CaseSeverity, CreateEventData } from '../types'
 import {
   CASE_SEVERITY_LABELS, EVENT_TYPE_LABELS, CONFIDENCE_LABELS,
-  CASE_STATUS_LABELS, VERIFICATION_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
+  CASE_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
-type ActiveTab = 'description' | 'table' | 'graph' | 'iocs' | 'alerts' | 'report'
+type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts' | 'report'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
@@ -41,36 +40,30 @@ const SEVERITY_COLOR: Record<CaseSeverity, string> = {
 
 const STATUS_COLOR: Record<CaseStatus, string> = {
   open: 'blue',
-  active: 'green',
-  review: 'yellow',
-  closed: 'gray',
+  in_progress: 'yellow',
+  confirmed: 'green',
+  rejected: 'red',
 }
 
 const STATUS_BG: Record<CaseStatus, string> = {
   open: 'rgba(88,166,255,0.15)',
-  active: 'rgba(63,185,80,0.15)',
-  review: 'rgba(210,153,34,0.15)',
-  closed: 'rgba(139,148,158,0.15)',
+  in_progress: 'rgba(210,153,34,0.15)',
+  confirmed: 'rgba(63,185,80,0.15)',
+  rejected: 'rgba(248,81,73,0.15)',
 }
 
 const STATUS_TEXT: Record<CaseStatus, string> = {
   open: '#58a6ff',
-  active: '#3fb950',
-  review: '#d29922',
-  closed: '#8b949e',
+  in_progress: '#d29922',
+  confirmed: '#3fb950',
+  rejected: '#f85149',
 }
 
 const STATUS_BORDER: Record<CaseStatus, string> = {
   open: 'rgba(88,166,255,0.4)',
-  active: 'rgba(63,185,80,0.4)',
-  review: 'rgba(210,153,34,0.4)',
-  closed: 'rgba(139,148,158,0.4)',
-}
-
-const VERIFICATION_COLOR: Record<VerificationStatus, string> = {
-  in_progress: 'yellow',
-  confirmed: 'green',
-  rejected: 'red',
+  in_progress: 'rgba(210,153,34,0.4)',
+  confirmed: 'rgba(63,185,80,0.4)',
+  rejected: 'rgba(248,81,73,0.4)',
 }
 
 const CLASSIFICATION_COLOR: Record<string, string> = {
@@ -78,24 +71,6 @@ const CLASSIFICATION_COLOR: Record<string, string> = {
   '2': 'yellow',
   '3': 'orange',
   '4': 'red',
-}
-
-const VERIFICATION_BG: Record<VerificationStatus, string> = {
-  in_progress: 'rgba(210,153,34,0.15)',
-  confirmed: 'rgba(63,185,80,0.15)',
-  rejected: 'rgba(248,81,73,0.15)',
-}
-
-const VERIFICATION_TEXT: Record<VerificationStatus, string> = {
-  in_progress: '#d29922',
-  confirmed: '#3fb950',
-  rejected: '#f85149',
-}
-
-const VERIFICATION_BORDER: Record<VerificationStatus, string> = {
-  in_progress: 'rgba(210,153,34,0.4)',
-  confirmed: 'rgba(63,185,80,0.4)',
-  rejected: 'rgba(248,81,73,0.4)',
 }
 
 export const CasePage: React.FC = () => {
@@ -122,7 +97,7 @@ export const CasePage: React.FC = () => {
     clearCaseData,
   } = useCaseStore()
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('description')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('report')
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
@@ -171,17 +146,6 @@ export const CasePage: React.FC = () => {
     removeEvent(eventId)
     setSelectedEvent(null)
     setRightPanelOpen(false)
-  }
-
-  const handleVerificationChange = async (verification_status: VerificationStatus) => {
-    if (!currentCase) return
-    try {
-      const updated = await updateCase(currentCase.id, { verification_status })
-      setCurrentCase(updated)
-      toast.success('Статус подтверждения обновлён')
-    } catch {
-      toast.error('Ошибка обновления статуса')
-    }
   }
 
   const handleStatusChange = async (status: CaseStatus) => {
@@ -406,37 +370,9 @@ export const CasePage: React.FC = () => {
                   label={CASE_SEVERITY_LABELS[currentCase.severity]}
                   size="sm"
                 />
-                {canEdit ? (
-                  <select
-                    value={currentCase.verification_status}
-                    onChange={(e) =>
-                      handleVerificationChange(e.target.value as VerificationStatus)
-                    }
-                    style={{
-                      width: 'auto',
-                      fontSize: 11,
-                      fontWeight: 500,
-                      padding: '1px 22px 1px 8px',
-                      borderRadius: '20px',
-                      border: `1px solid ${VERIFICATION_BORDER[currentCase.verification_status]}`,
-                      background: VERIFICATION_BG[currentCase.verification_status],
-                      color: VERIFICATION_TEXT[currentCase.verification_status],
-                    }}
-                  >
-                    {Object.entries(VERIFICATION_STATUS_LABELS).map(([val, label]) => (
-                      <option key={val} value={val}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Badge
-                    color={VERIFICATION_COLOR[currentCase.verification_status] as 'green'}
-                    label={VERIFICATION_STATUS_LABELS[currentCase.verification_status]}
-                    size="sm"
-                  />
-                )}
-                {CLASSIFICATION_COLOR[currentCase.confidentiality_label] ? (
+                {!currentCase.confidentiality_label ? (
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>—</span>
+                ) : CLASSIFICATION_COLOR[currentCase.confidentiality_label] ? (
                   <Badge
                     color={CLASSIFICATION_COLOR[currentCase.confidentiality_label] as 'green'}
                     label={currentCase.confidentiality_label}
@@ -492,12 +428,11 @@ export const CasePage: React.FC = () => {
           <div style={{ display: 'flex', gap: 0, marginTop: 12 }}>
             {(
               [
-                { key: 'description', label: 'Описание' },
-                { key: 'table', label: 'Таблица' },
+                { key: 'report', label: 'Отчёт' },
+                { key: 'table', label: 'Таймлайн' },
                 { key: 'graph', label: 'Граф' },
                 { key: 'iocs', label: `IOC (${iocs.length})` },
                 { key: 'alerts', label: 'Алерты' },
-                { key: 'report', label: 'Отчёт' },
               ] as { key: ActiveTab; label: string }[]
             ).map(({ key, label }) => (
               <button
@@ -526,14 +461,6 @@ export const CasePage: React.FC = () => {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {/* Center content */}
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeTab === 'description' && (
-              <CaseDescriptionPanel
-                currentCase={currentCase}
-                canEdit={canEdit}
-                onUpdate={setCurrentCase}
-              />
-            )}
-
             {activeTab === 'table' && (
               <EventTable
                 events={events}

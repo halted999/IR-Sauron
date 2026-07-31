@@ -207,7 +207,6 @@ async def delete_case(
 ) -> None:
     case = await _get_case_or_404(case_id, db)
     case.is_deleted = True
-    case.status = CaseStatus.closed
 
     await log_action(
         db=db,

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict, computed_field, model_validat
 
 from app.models import (
     UserRole, CaseStatus, CaseSeverity, BranchStatus,
-    EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus,
+    EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus,
     EventSourceType, AlertRuleAction,
 )
 from app.services.alert_stats_parsing import (
@@ -112,7 +112,6 @@ class CaseCreate(BaseModel):
 class CaseUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=500)
     status: Optional[CaseStatus] = None
-    verification_status: Optional[VerificationStatus] = None
     severity: Optional[CaseSeverity] = None
     ir_lead_id: Optional[uuid.UUID] = None
     classification: Optional[str] = Field(None, max_length=255)
@@ -126,6 +125,28 @@ class CaseUpdate(BaseModel):
     impact_summary: Optional[str] = None
     attribution: Optional[str] = None
     report_notes: Optional[str] = None
+    incident_number: Optional[str] = Field(None, max_length=100)
+    detection_source: Optional[str] = None
+    trigger_rule: Optional[str] = None
+    severity_justification: Optional[str] = None
+    executive_summary: Optional[str] = None
+    attack_vector: Optional[str] = None
+    exploited_vulnerability: Optional[str] = None
+    tooling_used: Optional[str] = None
+    affected_assets: Optional[str] = None
+    confidentiality_impact: Optional[str] = None
+    integrity_impact: Optional[str] = None
+    availability_impact: Optional[str] = None
+    financial_reputational_damage: Optional[str] = None
+    sla_breach: Optional[str] = None
+    containment_actions: Optional[str] = None
+    eradication_actions: Optional[str] = None
+    recovery_actions: Optional[str] = None
+    lessons_worked_well: Optional[str] = None
+    lessons_to_improve: Optional[str] = None
+    new_detection_rules_needed: Optional[str] = None
+    recommendations: Optional[str] = None
+    approval_notes: Optional[str] = None
 
 
 class CaseResponse(BaseModel):
@@ -134,7 +155,6 @@ class CaseResponse(BaseModel):
     id: uuid.UUID
     title: str
     status: CaseStatus
-    verification_status: VerificationStatus
     severity: CaseSeverity
     ir_lead_id: Optional[uuid.UUID]
     ir_lead: Optional[UserShort] = None
@@ -149,6 +169,28 @@ class CaseResponse(BaseModel):
     impact_summary: Optional[str] = None
     attribution: Optional[str] = None
     report_notes: Optional[str] = None
+    incident_number: Optional[str] = None
+    detection_source: Optional[str] = None
+    trigger_rule: Optional[str] = None
+    severity_justification: Optional[str] = None
+    executive_summary: Optional[str] = None
+    attack_vector: Optional[str] = None
+    exploited_vulnerability: Optional[str] = None
+    tooling_used: Optional[str] = None
+    affected_assets: Optional[str] = None
+    confidentiality_impact: Optional[str] = None
+    integrity_impact: Optional[str] = None
+    availability_impact: Optional[str] = None
+    financial_reputational_damage: Optional[str] = None
+    sla_breach: Optional[str] = None
+    containment_actions: Optional[str] = None
+    eradication_actions: Optional[str] = None
+    recovery_actions: Optional[str] = None
+    lessons_worked_well: Optional[str] = None
+    lessons_to_improve: Optional[str] = None
+    new_detection_rules_needed: Optional[str] = None
+    recommendations: Optional[str] = None
+    approval_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     participants: List[CaseParticipantResponse] = []
@@ -160,7 +202,6 @@ class CaseListResponse(BaseModel):
     id: uuid.UUID
     title: str
     status: CaseStatus
-    verification_status: VerificationStatus
     severity: CaseSeverity
     ir_lead_id: Optional[uuid.UUID]
     classification: Optional[str]

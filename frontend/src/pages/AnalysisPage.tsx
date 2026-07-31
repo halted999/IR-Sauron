@@ -21,7 +21,7 @@ const PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
 
 function initialPeriod(searchParams: URLSearchParams): StatisticsPeriodKey {
   const p = searchParams.get('period')
-  return p && VALID_PERIODS.has(p) ? (p as StatisticsPeriodKey) : '7d'
+  return p && VALID_PERIODS.has(p) ? (p as StatisticsPeriodKey) : 'day'
 }
 
 export const AnalysisPage: React.FC = () => {

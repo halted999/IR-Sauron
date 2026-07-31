@@ -26,9 +26,9 @@ class UserRole(str, enum.Enum):
 
 class CaseStatus(str, enum.Enum):
     open = "open"
-    active = "active"
-    review = "review"
-    closed = "closed"
+    in_progress = "in_progress"
+    confirmed = "confirmed"
+    rejected = "rejected"
 
 
 class CaseSeverity(str, enum.Enum):
@@ -77,12 +77,6 @@ class AlertStatus(str, enum.Enum):
     triaged = "triaged"
     escalated = "escalated"
     dismissed = "dismissed"
-
-
-class VerificationStatus(str, enum.Enum):
-    in_progress = "in_progress"
-    confirmed = "confirmed"
-    rejected = "rejected"
 
 
 class EventSourceType(str, enum.Enum):
@@ -181,10 +175,6 @@ class Case(Base):
         SAEnum(CaseStatus, name="case_status", create_type=False),
         default=CaseStatus.open, nullable=False
     )
-    verification_status: Mapped[VerificationStatus] = mapped_column(
-        SAEnum(VerificationStatus, name="verification_status", create_type=False),
-        default=VerificationStatus.in_progress, nullable=False
-    )
     severity: Mapped[CaseSeverity] = mapped_column(
         SAEnum(CaseSeverity, name="case_severity", create_type=False),
         nullable=False
@@ -213,6 +203,29 @@ class Case(Base):
     # Free-form analyst-written report, shown alongside the auto-compiled
     # summary on the "Отчёт" tab.
     report_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Report-template fields (plain manual fields, no auto-fill logic).
+    incident_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    detection_source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    trigger_rule: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    severity_justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    executive_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attack_vector: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    exploited_vulnerability: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tooling_used: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    affected_assets: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidentiality_impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    integrity_impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    availability_impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    financial_reputational_damage: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sla_breach: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    containment_actions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    eradication_actions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recovery_actions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lessons_worked_well: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lessons_to_improve: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_detection_rules_needed: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recommendations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approval_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

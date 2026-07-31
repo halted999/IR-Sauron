@@ -14,9 +14,9 @@ import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
 import { Pagination } from '../components/ui/Pagination'
-import type { Case, CaseStatus, CaseSeverity, CreateCaseData, VerificationStatus } from '../types'
+import type { Case, CaseStatus, CaseSeverity, CreateCaseData } from '../types'
 import {
-  CASE_STATUS_LABELS, CASE_SEVERITY_LABELS, VERIFICATION_STATUS_LABELS,
+  CASE_STATUS_LABELS, CASE_SEVERITY_LABELS,
   getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
@@ -30,12 +30,6 @@ const SEVERITY_COLOR: Record<CaseSeverity, string> = {
 
 const STATUS_COLOR: Record<CaseStatus, string> = {
   open: 'blue',
-  active: 'green',
-  review: 'yellow',
-  closed: 'gray',
-}
-
-const VERIFICATION_COLOR: Record<VerificationStatus, string> = {
   in_progress: 'yellow',
   confirmed: 'green',
   rejected: 'red',
@@ -274,7 +268,6 @@ export const DashboardPage: React.FC = () => {
                   <Th>Номер</Th>
                   <Th>Название</Th>
                   <Th>Статус</Th>
-                  <Th>Подтверждение</Th>
                   <Th>Критичность</Th>
                   <Th>Гриф</Th>
                   <Th>Открыто</Th>
@@ -339,20 +332,15 @@ export const DashboardPage: React.FC = () => {
                     </Td>
                     <Td>
                       <Badge
-                        color={VERIFICATION_COLOR[c.verification_status] as 'green'}
-                        label={VERIFICATION_STATUS_LABELS[c.verification_status]}
-                        size="sm"
-                      />
-                    </Td>
-                    <Td>
-                      <Badge
                         color={SEVERITY_COLOR[c.severity] as 'red'}
                         label={CASE_SEVERITY_LABELS[c.severity]}
                         size="sm"
                       />
                     </Td>
                     <Td>
-                      {CLASSIFICATION_COLOR[c.confidentiality_label] ? (
+                      {!c.confidentiality_label ? (
+                        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>—</span>
+                      ) : CLASSIFICATION_COLOR[c.confidentiality_label] ? (
                         <Badge
                           color={CLASSIFICATION_COLOR[c.confidentiality_label] as 'green'}
                           label={c.confidentiality_label}

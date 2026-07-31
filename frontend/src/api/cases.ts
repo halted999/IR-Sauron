@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Case, CreateCaseData, VerificationStatus } from '../types'
+import type { Case, CreateCaseData } from '../types'
 
 export interface CasesParams {
   status?: string
@@ -36,7 +36,6 @@ export async function createCase(data: CreateCaseData): Promise<Case> {
 
 export interface UpdateCaseData extends Partial<CreateCaseData> {
   status?: string
-  verification_status?: VerificationStatus
   root_cause?: string
   impact_summary?: string
   attribution?: string
@@ -44,6 +43,28 @@ export interface UpdateCaseData extends Partial<CreateCaseData> {
   incident_started_at?: string | null
   incident_contained_at?: string | null
   incident_closed_at?: string | null
+  incident_number?: string
+  detection_source?: string
+  trigger_rule?: string
+  severity_justification?: string
+  executive_summary?: string
+  attack_vector?: string
+  exploited_vulnerability?: string
+  tooling_used?: string
+  affected_assets?: string
+  confidentiality_impact?: string
+  integrity_impact?: string
+  availability_impact?: string
+  financial_reputational_damage?: string
+  sla_breach?: string
+  containment_actions?: string
+  eradication_actions?: string
+  recovery_actions?: string
+  lessons_worked_well?: string
+  lessons_to_improve?: string
+  new_detection_rules_needed?: string
+  recommendations?: string
+  approval_notes?: string
 }
 
 export async function updateCase(id: string, data: UpdateCaseData): Promise<Case> {

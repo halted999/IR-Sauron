@@ -5,15 +5,13 @@ export type UserRole =
   | 'observer'
   | 'external_contractor'
 
-export type CaseStatus = 'open' | 'active' | 'review' | 'closed'
+export type CaseStatus = 'open' | 'in_progress' | 'confirmed' | 'rejected'
 
 export type CaseSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
 
 export type BranchStatus = 'hypothesis' | 'confirmed' | 'rejected'
 
 export type AlertStatus = 'new' | 'triaged' | 'escalated' | 'dismissed'
-
-export type VerificationStatus = 'in_progress' | 'confirmed' | 'rejected'
 
 export type EventType =
   | 'attacker_action'
@@ -111,7 +109,6 @@ export interface Case {
   id: string
   title: string
   status: CaseStatus
-  verification_status: VerificationStatus
   severity: CaseSeverity
   ir_lead_id?: string
   classification?: string
@@ -125,6 +122,28 @@ export interface Case {
   impact_summary?: string
   attribution?: string
   report_notes?: string
+  incident_number?: string
+  detection_source?: string
+  trigger_rule?: string
+  severity_justification?: string
+  executive_summary?: string
+  attack_vector?: string
+  exploited_vulnerability?: string
+  tooling_used?: string
+  affected_assets?: string
+  confidentiality_impact?: string
+  integrity_impact?: string
+  availability_impact?: string
+  financial_reputational_damage?: string
+  sla_breach?: string
+  containment_actions?: string
+  eradication_actions?: string
+  recovery_actions?: string
+  lessons_worked_well?: string
+  lessons_to_improve?: string
+  new_detection_rules_needed?: string
+  recommendations?: string
+  approval_notes?: string
   created_at: string
   updated_at: string
   participants?: CaseParticipant[]
@@ -328,16 +347,16 @@ export const ALERT_STATUS_COLORS: Record<AlertStatus, string> = {
 
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   open: 'Открыто',
-  active: 'Активно',
-  review: 'На проверке',
-  closed: 'Закрыто',
+  in_progress: 'В работе',
+  confirmed: 'Подтверждён',
+  rejected: 'Отклонён',
 }
 
 const SAURON_STATUS_LABELS: Partial<Record<CaseStatus, string>> = {
   open: 'Открытый глаз Саурона',
-  active: 'Фиолетовый глаз Саурона',
-  review: 'Прищуренный глаз Саурона',
-  closed: 'Закрытый глаз Саурона',
+  in_progress: 'Прищуренный глаз Саурона',
+  confirmed: 'Пылающий глаз Саурона',
+  rejected: 'Закрытый глаз Саурона',
 }
 
 export function getCaseStatusLabel(status: CaseStatus, theme: string): string {
@@ -351,16 +370,10 @@ export function getSauronEyeVariant(
   status: CaseStatus,
 ): 'open' | 'closed' | 'review' | 'active' | null {
   if (status === 'open') return 'open'
-  if (status === 'active') return 'active'
-  if (status === 'review') return 'review'
-  if (status === 'closed') return 'closed'
+  if (status === 'in_progress') return 'review'
+  if (status === 'confirmed') return 'active'
+  if (status === 'rejected') return 'closed'
   return null
-}
-
-export const VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
-  in_progress: 'В работе',
-  confirmed: 'Подтверждён',
-  rejected: 'Отклонён',
 }
 
 export const CASE_SEVERITY_LABELS: Record<CaseSeverity, string> = {
@@ -400,7 +413,7 @@ export type StatisticsPeriodKey =
   | 'custom'
 
 export const STATISTICS_PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
-  day: '1 день',
+  day: '24 часа',
   current_week: 'Текущая неделя',
   '7d': '7 дней',
   current_month: 'Текущий месяц',

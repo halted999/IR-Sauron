@@ -78,7 +78,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   const [cursorWorldPos, setCursorWorldPos] = useState<Position | null>(null)
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
   const [pendingLink, setPendingLink] = useState<{ sourceId: string; targetId: string } | null>(null)
-  const [linkTypeInput, setLinkTypeInput] = useState('')
   const [linkDescInput, setLinkDescInput] = useState('')
   const [linkActionType, setLinkActionType] = useState<ActionType>('network_connection')
   const [linkDate, setLinkDate] = useState('')
@@ -207,7 +206,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
     if (linkingFromId) {
       if (linkingFromId !== event.id) {
         setPendingLink({ sourceId: linkingFromId, targetId: event.id })
-        setLinkTypeInput('')
         setLinkDescInput('')
         setLinkActionType('network_connection')
         setLinkDate(todayDateStr())
@@ -231,7 +229,7 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   }
 
   const handleSaveLink = async () => {
-    if (!pendingLink || !linkTypeInput.trim()) return
+    if (!pendingLink) return
     setIsSavingLink(true)
     try {
       const event_ts =
@@ -240,7 +238,7 @@ export const EventGraph: React.FC<EventGraphProps> = ({
           : undefined
       await createEventLink(pendingLink.sourceId, {
         target_event_id: pendingLink.targetId,
-        link_type: linkTypeInput.trim(),
+        link_type: ACTION_TYPE_LABELS[linkActionType],
         description: linkDescInput.trim() || undefined,
         action_type: linkActionType,
         event_ts,
@@ -576,7 +574,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
               variant="primary"
               onClick={handleSaveLink}
               isLoading={isSavingLink}
-              disabled={!linkTypeInput.trim()}
             >
               Создать
             </Button>
@@ -585,22 +582,11 @@ export const EventGraph: React.FC<EventGraphProps> = ({
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label htmlFor="link-type">Тип связи *</label>
-            <input
-              id="link-type"
-              type="text"
-              value={linkTypeInput}
-              onChange={(e) => setLinkTypeInput(e.target.value)}
-              placeholder="Например, привело к, предшествовало"
-              autoFocus
-            />
-          </div>
-
-          <div>
-            <label htmlFor="link-action-type">Тип события</label>
+            <label htmlFor="link-action-type">Тип связи</label>
             <select
               id="link-action-type"
               value={linkActionType}
+              autoFocus
               onChange={(e) => setLinkActionType(e.target.value as ActionType)}
             >
               {Object.entries(ACTION_TYPE_LABELS).map(([val, label]) => (

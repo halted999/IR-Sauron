@@ -133,7 +133,7 @@ const HorizontalBarCard: React.FC<{ title: string; headLabel: string; rows: { la
 
 export const StatisticsPage: React.FC = () => {
   const toast = useToastStore()
-  const [period, setPeriod] = useState<StatisticsPeriodKey>('7d')
+  const [period, setPeriod] = useState<StatisticsPeriodKey>('day')
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
   const [data, setData] = useState<StatisticsOverview | null>(null)
