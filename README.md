@@ -50,8 +50,14 @@ Frontend будет доступен на `http://localhost:3000` (dev) или �
 - Заполненный `.env` (скопируйте из `.env.example`): как минимум пароли PostgreSQL/Redis/MinIO и `SECRET_KEY` для подписи JWT.
 - Клиент `pg_dump`/`pg_restore` внутри backend-образа зафиксирован на версии **PostgreSQL 16** (через репозиторий PGDG) — под версию сервера `postgres:16-alpine` из docker-compose. При восстановлении бэкапа базы данными снаружи контейнера используйте клиент той же версии, иначе `pg_restore` может завершиться с ошибкой несовместимости.
 
-<img width="1599" height="883" alt="image" src="https://github.com/user-attachments/assets/c7f3b419-7583-49dc-ac2f-f68823ca6962" />
-<img width="1908" height="1057" alt="image" src="https://github.com/user-attachments/assets/f2d97dc7-cc6c-484e-a180-d79a4c1f67e4" />
-<img width="1890" height="873" alt="image" src="https://github.com/user-attachments/assets/f85bd3b8-6fe9-42aa-bd5e-4a01ca46d815" />
-<img width="1587" height="900" alt="image" src="https://github.com/user-attachments/assets/f75ea179-b2c1-46c0-a4ed-d9dbf31c9ab9" />
-<img width="1903" height="1026" alt="image" src="https://github.com/user-attachments/assets/dd9d11ff-3665-4ddc-8fdd-38e8986e0925" />
+<img width="2159" height="1072" alt="image" src="https://github.com/user-attachments/assets/d81d45a1-942f-49cd-8484-e4968b740921" />
+<img width="2138" height="1072" alt="image" src="https://github.com/user-attachments/assets/9101a2f8-a887-456a-be68-6eab3b47abec" />
+<img width="2147" height="1081" alt="image" src="https://github.com/user-attachments/assets/3f87f9b1-52f3-4861-8702-d7949180bb07" />
+<img width="2170" height="1083" alt="image" src="https://github.com/user-attachments/assets/b07ecd25-5c2b-4c1f-858b-d5daac3a1661" />
+<img width="2158" height="1068" alt="image" src="https://github.com/user-attachments/assets/fd1e2f62-caf8-4205-a4ee-1a449162456a" />
+<img width="2134" height="958" alt="image" src="https://github.com/user-attachments/assets/7790f797-438e-49bc-b152-9a0e59f482db" />
+<img width="2153" height="1077" alt="image" src="https://github.com/user-attachments/assets/dd874d31-d9af-48c1-8caf-ed2ad7ba1aa2" />
+<img width="2164" height="923" alt="image" src="https://github.com/user-attachments/assets/0d38f891-df0c-440b-ae86-6ae75fb5d4e8" />
+<img width="2168" height="1067" alt="image" src="https://github.com/user-attachments/assets/33616a21-787d-4775-9552-d861535614f5" />
+<img width="2178" height="745" alt="image" src="https://github.com/user-attachments/assets/b6f31c00-23b8-4cd3-b5a9-420d403da904" />
+<img width="2164" height="700" alt="image" src="https://github.com/user-attachments/assets/ff6a25da-6e89-4f91-9c5e-3f1272e083b5" />
