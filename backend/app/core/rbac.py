@@ -34,7 +34,6 @@ require_write_access = RoleChecker([
     UserRole.admin,
     UserRole.ir_lead,
     UserRole.investigator,
-    UserRole.threat_hunter,
 ])
 
 
@@ -74,9 +73,9 @@ async def require_case_write_access(
 ) -> bool:
     """
     Same as require_case_access but also enforces that the user's role allows writes.
-    Observers and legal roles are read-only.
+    Observers are read-only.
     """
-    read_only_roles = {UserRole.observer, UserRole.legal}
+    read_only_roles = {UserRole.observer}
     if user.role in read_only_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

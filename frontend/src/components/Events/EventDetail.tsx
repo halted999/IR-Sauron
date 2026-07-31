@@ -63,8 +63,7 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   const canEdit =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
-    user?.role === 'investigator' ||
-    user?.role === 'threat_hunter'
+    user?.role === 'investigator'
 
   const handleArtifactUpload = async (file: File) => {
     setUploadingFile(true)

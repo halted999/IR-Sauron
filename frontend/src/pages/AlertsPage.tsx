@@ -116,8 +116,7 @@ export const AlertsPage: React.FC = () => {
   const canWrite =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
-    user?.role === 'investigator' ||
-    user?.role === 'threat_hunter'
+    user?.role === 'investigator'
 
   const handleSaveAlert = async (data: CreateAlertData) => {
     try {

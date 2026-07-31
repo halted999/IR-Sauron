@@ -20,9 +20,7 @@ class UserRole(str, enum.Enum):
     admin = "admin"
     ir_lead = "ir_lead"
     investigator = "investigator"
-    threat_hunter = "threat_hunter"
     observer = "observer"
-    legal = "legal"
     external_contractor = "external_contractor"
 
 

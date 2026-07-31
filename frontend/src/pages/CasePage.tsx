@@ -288,8 +288,7 @@ export const CasePage: React.FC = () => {
   const canEdit =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
-    user?.role === 'investigator' ||
-    user?.role === 'threat_hunter'
+    user?.role === 'investigator'
 
   const statusEyeVariant = theme === 'sauron' ? getSauronEyeVariant(currentCase.status) : null
 

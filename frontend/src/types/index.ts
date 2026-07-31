@@ -2,9 +2,7 @@ export type UserRole =
   | 'admin'
   | 'ir_lead'
   | 'investigator'
-  | 'threat_hunter'
   | 'observer'
-  | 'legal'
   | 'external_contractor'
 
 export type CaseStatus = 'open' | 'active' | 'review' | 'closed'
@@ -379,9 +377,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Администратор',
   ir_lead: 'Руководитель IR',
   investigator: 'Следователь',
-  threat_hunter: 'Threat Hunter',
   observer: 'Наблюдатель',
-  legal: 'Юрист',
   external_contractor: 'Внешний подрядчик',
 }
 

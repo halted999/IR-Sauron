@@ -138,8 +138,7 @@ export const AlertDetailPage: React.FC = () => {
   const canWrite =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
-    user?.role === 'investigator' ||
-    user?.role === 'threat_hunter'
+    user?.role === 'investigator'
 
   const applyUpdate = (updated: Alert) => {
     setAlert(updated)

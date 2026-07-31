@@ -43,8 +43,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
   const canWrite =
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
-    user?.role === 'investigator' ||
-    user?.role === 'threat_hunter'
+    user?.role === 'investigator'
 
   useEffect(() => {
     setIsLoading(true)

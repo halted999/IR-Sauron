@@ -46,8 +46,7 @@ async def _create_enum_types_if_missing(conn) -> None:
     """
     enums = {
         "user_role": [
-            "admin", "ir_lead", "investigator", "threat_hunter",
-            "observer", "legal", "external_contractor",
+            "admin", "ir_lead", "investigator", "observer", "external_contractor",
         ],
         "case_status": ["open", "active", "review", "closed"],
         "case_severity": ["critical", "high", "medium", "low", "informational"],
