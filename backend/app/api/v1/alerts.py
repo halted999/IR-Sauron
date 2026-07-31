@@ -17,14 +17,17 @@ from app.models import (
 )
 from app.schemas import (
     AlertAssignRequest, AlertBulkEscalateRequest, AlertCreate, AlertEscalateRequest,
-    AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse,
+    AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse, SimilarAlert, SimilarAlertsResponse,
 )
 from app.services.alert_rules import apply_matching_rules
+from app.services.alert_stats_parsing import is_internal_ip, resolve_accounts, resolve_ips
 
 _SEVERITY_ORDER = [
     CaseSeverity.critical, CaseSeverity.high, CaseSeverity.medium,
     CaseSeverity.low, CaseSeverity.informational,
 ]
+
+_SIMILAR_ALERTS_LIMIT = 100
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -214,6 +217,57 @@ async def get_alert(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> Alert:
     return await _get_alert_or_404(alert_id, db)
+
+
+@router.get("/{alert_id}/similar", response_model=SimilarAlertsResponse)
+async def get_similar_alerts(
+    alert_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> SimilarAlertsResponse:
+    """
+    Other alerts sharing an internal IP or account with this one. Scans all
+    non-deleted alerts and intersects their parsed internal IPs / accounts
+    against this alert's own — same heuristic parsing used everywhere else
+    (see app.services.alert_stats_parsing), not a dedicated relational model.
+    """
+    alert = await _get_alert_or_404(alert_id, db)
+
+    own_ips = {ip for ip in resolve_ips(alert.title, alert.description, alert.raw_event) if is_internal_ip(ip)}
+    own_accounts = set(resolve_accounts(alert.title, alert.description, alert.raw_event))
+
+    if not own_ips and not own_accounts:
+        return SimilarAlertsResponse(total=0, items=[])
+
+    result = await db.execute(
+        select(Alert.id, Alert.title, Alert.description, Alert.status, Alert.created_at, Alert.raw_event)
+        .where(Alert.is_deleted.is_(False), Alert.id != alert_id)
+    )
+    rows = result.all()
+
+    matches: List[SimilarAlert] = []
+    for other_id, title, description, other_status, created_at, raw_event in rows:
+        other_ips = {ip for ip in resolve_ips(title, description, raw_event) if is_internal_ip(ip)}
+        other_accounts = set(resolve_accounts(title, description, raw_event))
+
+        matched_ips = own_ips & other_ips
+        matched_accounts = own_accounts & other_accounts
+        if not matched_ips and not matched_accounts:
+            continue
+
+        matches.append(
+            SimilarAlert(
+                alert_id=other_id,
+                title=title,
+                status=other_status,
+                created_at=created_at,
+                matched_internal_ips=sorted(matched_ips),
+                matched_accounts=sorted(matched_accounts),
+            )
+        )
+
+    matches.sort(key=lambda m: m.created_at, reverse=True)
+    return SimilarAlertsResponse(total=len(matches), items=matches[:_SIMILAR_ALERTS_LIMIT])
 
 
 # ── Update (triage / dismiss / edit) ─────────────────────────────────────────

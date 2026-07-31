@@ -97,11 +97,13 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 alert = Alert(
                     title=_elastic_title(doc, str(external_id)),
                     description=_truncate(json.dumps(doc, ensure_ascii=False, default=str), 4000),
+                    raw_event=doc,
                     severity=_elastic_severity(doc),
                     source=source.name,
                     status=AlertStatus.new,
                     event_source_id=source.id,
                     external_id=str(external_id),
+                    source_index=hit.get("_index"),
                 )
                 db.add(alert)
                 await db.flush()
@@ -146,6 +148,13 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
 
 
 async def _poll_tick() -> None:
+    # uvicorn runs several worker processes, each with its own AsyncIOScheduler
+    # (see start_scheduler below), so this fires roughly 4x per interval — once
+    # per worker, all within the same fraction of a second. The lock's TTL
+    # (just under _POLL_TICK_SECONDS) is what actually de-dupes those calls
+    # down to one real sync per interval: it must NOT be deleted as soon as
+    # this tick finishes, or every worker's near-simultaneous tick would pass
+    # the acquire check and each poll the source. Let it expire on its own.
     redis = await get_redis()
     acquired = await redis.set(_TICK_LOCK_KEY, "1", nx=True, ex=_TICK_LOCK_TTL_SECONDS)
     if not acquired:
@@ -166,8 +175,6 @@ async def _poll_tick() -> None:
             await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception("Event source poll tick failed")
-    finally:
-        await redis.delete(_TICK_LOCK_KEY)
 
 
 def start_scheduler() -> None:

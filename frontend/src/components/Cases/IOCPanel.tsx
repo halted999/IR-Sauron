@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { IOC, IOCType, CreateIOCData } from '../../types'
@@ -36,6 +37,7 @@ const IOC_TYPES: IOCType[] = [
 ]
 
 export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
+  const navigate = useNavigate()
   const toast = useToastStore()
   const { addIOC, removeIOC } = useCaseStore()
   const [filterType, setFilterType] = useState<string>('all')
@@ -153,7 +155,7 @@ export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
                 <Th>Значение</Th>
                 <Th>Контекст</Th>
                 <Th>Добавлен</Th>
-                <Th style={{ width: 40 }}></Th>
+                <Th style={{ width: 110 }}></Th>
               </tr>
             </thead>
             <tbody>
@@ -192,20 +194,43 @@ export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
                     {format(new Date(ioc.created_at), 'dd.MM.yyyy', { locale: ru })}
                   </Td>
                   <Td>
-                    <button
-                      onClick={() => handleDelete(ioc.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--danger)',
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        padding: 4,
-                      }}
-                      title="Удалить IOC"
-                    >
-                      ×
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {(ioc.ioc_type === 'ip' || ioc.ioc_type === 'filename') && (
+                        <button
+                          onClick={() =>
+                            navigate(`/analysis?q=${encodeURIComponent(ioc.value)}&period=30d`)
+                          }
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: 11,
+                            fontWeight: 500,
+                            color: 'var(--text-secondary)',
+                            background: 'var(--bg-tertiary)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="Найти связи в разделе «Анализ»"
+                        >
+                          В анализ
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(ioc.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--danger)',
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          padding: 4,
+                        }}
+                        title="Удалить IOC"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </Td>
                 </tr>
               ))}

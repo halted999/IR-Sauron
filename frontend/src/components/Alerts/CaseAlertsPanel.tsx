@@ -10,6 +10,7 @@ import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../../types'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { Spinner } from '../ui/Spinner'
+import { AnalyzeDropdownButton } from '../Analysis/AnalyzeDropdownButton'
 
 interface CaseAlertsPanelProps {
   caseId: string
@@ -156,6 +157,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
             <Th>Критичность</Th>
             <Th>Статус</Th>
             <Th>Создан</Th>
+            <Th></Th>
           </tr>
         </thead>
         <tbody>
@@ -215,6 +217,14 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
               </Td>
               <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
                 {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
+              </Td>
+              <Td onClick={(e) => e.stopPropagation()}>
+                <AnalyzeDropdownButton
+                  size="sm"
+                  ips={a.parsed_internal_ips}
+                  accounts={a.parsed_accounts}
+                  files={a.parsed_files}
+                />
               </Td>
             </tr>
           ))}

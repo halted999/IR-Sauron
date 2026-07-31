@@ -1,13 +1,17 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, computed_field, model_validator
 
 from app.models import (
     UserRole, CaseStatus, CaseSeverity, BranchStatus,
     EventType, ActionType, ConfidenceLevel, CommentVisibility, AlertStatus, VerificationStatus,
     EventSourceType, AlertRuleAction,
 )
+from app.services.alert_stats_parsing import (
+    classify_threat_type, is_internal_ip, resolve_accounts, resolve_files, resolve_ips, resolve_urls,
+)
+from app.services.ecs_parsing import flatten_ecs_doc
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -188,6 +192,11 @@ class AlertBulkEscalateRequest(BaseModel):
     external_ticket_id: Optional[str] = Field(None, max_length=255)
 
 
+class DescriptionField(BaseModel):
+    key: str
+    value: str
+
+
 class AlertResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -201,6 +210,7 @@ class AlertResponse(BaseModel):
     event_source_id: Optional[uuid.UUID]
     external_id: Optional[str]
     external_url: Optional[str]
+    source_index: Optional[str]
     is_deleted: bool
     deleted_at: Optional[datetime]
     assigned_to: Optional[uuid.UUID]
@@ -208,9 +218,79 @@ class AlertResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Full raw ECS event doc (Elastic sources only) — kept for the computed
+    # fields below to read from, never sent back over the API.
+    raw_event: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
+
+    # ── Parsed fields ──────────────────────────────────────────────────────
+    # Elastic-sourced alerts (raw_event present) are parsed via real ECS
+    # field paths — see app.services.ecs_parsing. Everything else (e.g.
+    # TheHive, which has no structured fields) falls back to best-effort
+    # regex extraction from title/description — see
+    # app.services.alert_stats_parsing. Neither path mutates title/description.
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def threat_type(self) -> str:
+        return classify_threat_type(self.title, self.description)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description_table(self) -> Optional[List[DescriptionField]]:
+        """
+        The ECS event flattened into field/value rows for Elastic-sourced
+        alerts, built from the untruncated raw_event (description itself is
+        only a 4000-char JSON preview and is left exactly as ingested). None
+        for other sources — their description is already human-written text.
+        """
+        if not self.raw_event:
+            return None
+        return [DescriptionField(key=key, value=value) for key, value in flatten_ecs_doc(self.raw_event)]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def parsed_urls(self) -> List[str]:
+        return resolve_urls(self.title, self.description, self.raw_event)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def parsed_external_ips(self) -> List[str]:
+        ips = resolve_ips(self.title, self.description, self.raw_event)
+        return [ip for ip in ips if not is_internal_ip(ip)]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def parsed_internal_ips(self) -> List[str]:
+        ips = resolve_ips(self.title, self.description, self.raw_event)
+        return [ip for ip in ips if is_internal_ip(ip)]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def parsed_accounts(self) -> List[str]:
+        return resolve_accounts(self.title, self.description, self.raw_event)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def parsed_files(self) -> List[str]:
+        return resolve_files(self.title, self.description, self.raw_event)
+
 
 class AlertIdsRequest(BaseModel):
     alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+
+
+class SimilarAlert(BaseModel):
+    alert_id: uuid.UUID
+    title: str
+    status: AlertStatus
+    created_at: datetime
+    matched_internal_ips: List[str]
+    matched_accounts: List[str]
+
+
+class SimilarAlertsResponse(BaseModel):
+    total: int
+    items: List[SimilarAlert]
 
 
 class AlertAssignRequest(BaseModel):
@@ -678,6 +758,67 @@ class EventSourceSyncResult(BaseModel):
     ok: bool
     message: str
     new_alerts: int
+
+
+# ─── Statistics ───────────────────────────────────────────────────────────────
+
+class StatisticsPeriod(BaseModel):
+    start: datetime
+    end: datetime
+
+
+class StatusCount(BaseModel):
+    status: AlertStatus
+    count: int
+
+
+class ValueCount(BaseModel):
+    value: str
+    count: int
+
+
+class ThreatTypeCount(BaseModel):
+    threat_type: str
+    count: int
+
+
+class TimelinePoint(BaseModel):
+    bucket: datetime
+    count: int
+
+
+class StatisticsResponse(BaseModel):
+    period: StatisticsPeriod
+    total_alerts: int
+    timeline: List[TimelinePoint]
+    timeline_granularity: str
+    by_status: List[StatusCount]
+    by_threat_type: List[ThreatTypeCount]
+    top_urls: List[ValueCount]
+    top_external_ips: List[ValueCount]
+    top_internal_ips: List[ValueCount]
+    top_accounts: List[ValueCount]
+
+
+class GraphNode(BaseModel):
+    id: str
+    kind: str  # "alert" | "ip" | "account" | "file"
+    label: str
+    status: Optional[AlertStatus] = None
+    degree: int = 0
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    kind: str  # "ip" | "account" | "file"
+
+
+class CorrelationGraphResponse(BaseModel):
+    period: StatisticsPeriod
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
+    truncated: bool
 
 
 # ─── Generic ──────────────────────────────────────────────────────────────────

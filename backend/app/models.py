@@ -275,6 +275,15 @@ class Alert(Base):
     )
     external_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     external_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # Concrete Elasticsearch index the alert was ingested from (the hit's
+    # `_index`, e.g. "checkpoint-2026.07.30") — not part of `_source`/raw_event,
+    # so it must be captured separately at ingestion time. Null for alerts
+    # ingested before this field existed, or from non-Elastic sources.
+    source_index: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Full raw event document as ingested from the source (e.g. the Elastic ECS
+    # _source doc) — kept untruncated so ECS field extraction is reliable, unlike
+    # `description` which stores only a 4000-char preview for display.
+    raw_event: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(

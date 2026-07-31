@@ -7,6 +7,7 @@ import { CasePage } from './pages/CasePage'
 import { AlertsPage } from './pages/AlertsPage'
 import { AlertDetailPage } from './pages/AlertDetailPage'
 import { StatisticsPage } from './pages/StatisticsPage'
+import { AnalysisPage } from './pages/AnalysisPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminPanelPage } from './pages/AdminPanelPage'
 import { FullPageSpinner } from './components/ui/Spinner'
@@ -74,6 +75,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <StatisticsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analysis"
+          element={
+            <ProtectedRoute>
+              <AnalysisPage />
             </ProtectedRoute>
           }
         />

@@ -148,6 +148,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           <NavLink to="/statistics" style={navLinkStyle}>
             Статистика
           </NavLink>
+          <NavLink to="/analysis" style={navLinkStyle}>
+            Анализ
+          </NavLink>
         </nav>
 
         {/* Spacer */}

@@ -1,6 +1,7 @@
 import apiClient from './client'
 import type {
   Alert, Case, CreateAlertData, EscalateAlertData, BulkEscalateAlertData, AlertStatus, CaseSeverity,
+  SimilarAlertsResponse,
 } from '../types'
 
 export interface AlertsParams {
@@ -30,6 +31,11 @@ export async function getAlertsPaged(params?: AlertsParams): Promise<PagedResult
 
 export async function getAlert(id: string): Promise<Alert> {
   const response = await apiClient.get<Alert>(`/alerts/${id}`)
+  return response.data
+}
+
+export async function getSimilarAlerts(id: string): Promise<SimilarAlertsResponse> {
+  const response = await apiClient.get<SimilarAlertsResponse>(`/alerts/${id}/similar`)
   return response.data
 }
 

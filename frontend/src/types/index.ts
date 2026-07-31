@@ -41,6 +41,7 @@ export interface User {
   full_name?: string
   role: UserRole
   is_active: boolean
+  created_at?: string
 }
 
 export interface Alert {
@@ -51,12 +52,39 @@ export interface Alert {
   source?: string
   status: AlertStatus
   case_id?: string
+  source_index?: string
   is_deleted: boolean
   deleted_at?: string
   assigned_to?: string
   created_by?: string
   created_at: string
   updated_at: string
+  // Parsed on the backend — ECS fields for Elastic-sourced alerts, best-effort
+  // regex over title/description otherwise. description itself is untouched.
+  // See app.services.ecs_parsing / app.services.alert_stats_parsing.
+  threat_type: string
+  // ECS doc flattened into field/value rows for Elastic-sourced alerts (from
+  // the untruncated raw event); null for plain-text sources (e.g. TheHive).
+  description_table?: { key: string; value: string }[] | null
+  parsed_urls: string[]
+  parsed_external_ips: string[]
+  parsed_internal_ips: string[]
+  parsed_accounts: string[]
+  parsed_files: string[]
+}
+
+export interface SimilarAlert {
+  alert_id: string
+  title: string
+  status: AlertStatus
+  created_at: string
+  matched_internal_ips: string[]
+  matched_accounts: string[]
+}
+
+export interface SimilarAlertsResponse {
+  total: number
+  items: SimilarAlert[]
 }
 
 export interface CreateAlertData {
@@ -285,6 +313,13 @@ export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
   dismissed: 'Отклонён',
 }
 
+export const ALERT_STATUS_COLORS: Record<AlertStatus, string> = {
+  new: '#58a6ff',
+  triaged: '#d29922',
+  escalated: '#3fb950',
+  dismissed: '#8b949e',
+}
+
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   open: 'Открыто',
   active: 'Активно',
@@ -348,4 +383,86 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   observer: 'Наблюдатель',
   legal: 'Юрист',
   external_contractor: 'Внешний подрядчик',
+}
+
+// ─── Statistics ─────────────────────────────────────────────────────────────
+
+export type StatisticsPeriodKey =
+  | 'day'
+  | 'current_week'
+  | '7d'
+  | 'current_month'
+  | '30d'
+  | 'custom'
+
+export const STATISTICS_PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
+  day: '1 день',
+  current_week: 'Текущая неделя',
+  '7d': '7 дней',
+  current_month: 'Текущий месяц',
+  '30d': '30 дней',
+  custom: 'Выборочный период',
+}
+
+export interface StatisticsPeriod {
+  start: string
+  end: string
+}
+
+export interface StatusCount {
+  status: AlertStatus
+  count: number
+}
+
+export interface ThreatTypeCount {
+  threat_type: string
+  count: number
+}
+
+export interface ValueCount {
+  value: string
+  count: number
+}
+
+export type TimelineGranularity = 'hour' | 'day' | 'week' | 'month'
+
+export interface TimelinePoint {
+  bucket: string
+  count: number
+}
+
+export interface StatisticsOverview {
+  period: StatisticsPeriod
+  total_alerts: number
+  timeline: TimelinePoint[]
+  timeline_granularity: TimelineGranularity
+  by_status: StatusCount[]
+  by_threat_type: ThreatTypeCount[]
+  top_urls: ValueCount[]
+  top_external_ips: ValueCount[]
+  top_internal_ips: ValueCount[]
+  top_accounts: ValueCount[]
+}
+
+export type GraphNodeKind = 'alert' | 'ip' | 'account' | 'file'
+
+export interface CorrelationGraphNode {
+  id: string
+  kind: GraphNodeKind
+  label: string
+  status?: AlertStatus
+  degree: number
+}
+
+export interface CorrelationGraphEdge {
+  source: string
+  target: string
+  kind: 'ip' | 'account' | 'file'
+}
+
+export interface CorrelationGraph {
+  period: StatisticsPeriod
+  nodes: CorrelationGraphNode[]
+  edges: CorrelationGraphEdge[]
+  truncated: boolean
 }

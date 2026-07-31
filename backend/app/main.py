@@ -23,7 +23,7 @@ from app.models import (  # noqa: F401
 
 from app.api.v1 import (
     auth, users, cases, branches, events, artifacts, iocs, comments, alerts, admin,
-    event_sources, alert_rules,
+    event_sources, alert_rules, statistics,
 )
 from app.services.event_source_scheduler import start_scheduler, stop_scheduler
 from app.ws.manager import manager
@@ -97,6 +97,9 @@ async def _add_missing_columns_if_needed(conn) -> None:
         text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS external_url VARCHAR(1000) NULL")
     )
     await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS raw_event JSONB NULL")
+    )
+    await conn.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_source_external ON alerts "
             "(event_source_id, external_id) WHERE event_source_id IS NOT NULL AND external_id IS NOT NULL"
@@ -125,6 +128,9 @@ async def _add_missing_columns_if_needed(conn) -> None:
             "ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS "
             "match_description_contains VARCHAR(1000) NULL"
         )
+    )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_index VARCHAR(255) NULL")
     )
 
 
@@ -227,6 +233,7 @@ app.include_router(alerts.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")
 app.include_router(event_sources.router, prefix="/v1")
 app.include_router(alert_rules.router, prefix="/v1")
+app.include_router(statistics.router, prefix="/v1")
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

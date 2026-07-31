@@ -11,6 +11,8 @@ import { useToastStore } from '../store/toast'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { AssignUserModal } from '../components/Alerts/AssignUserModal'
 import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
+import { SimilarAlertsPanel } from '../components/Alerts/SimilarAlertsPanel'
+import { AnalyzeDropdownButton } from '../components/Analysis/AnalyzeDropdownButton'
 import type { AlertRuleFromSelectionResult } from '../api/alertRules'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -31,6 +33,70 @@ const STATUS_COLOR: Record<AlertStatus, string> = {
   triaged: 'yellow',
   escalated: 'green',
   dismissed: 'gray',
+}
+
+// log.level severity scale, anchored exactly as requested: informational is
+// pure green, critical is pure red. Anything milder than informational
+// (trace/debug) is grouped into the same green rung, and anything worse than
+// critical (alert/emergency) into the same red rung, rather than stretching
+// the gradient past those two anchors.
+const LOG_LEVEL_SCALE: string[][] = [
+  ['trace', 'debug', 'informational', 'information', 'info'],
+  ['notice'],
+  ['warning', 'warn'],
+  ['error', 'err'],
+  ['critical', 'crit', 'alert', 'emergency', 'emerg', 'fatal'],
+]
+const LOG_LEVEL_GRADIENT: [number, [number, number, number]][] = [
+  [0, [63, 185, 80]], // green
+  [0.5, [210, 153, 34]], // yellow
+  [1, [248, 81, 73]], // red
+]
+
+function logLevelColor(rawValue: string): [number, number, number] | null {
+  const normalized = rawValue.trim().toLowerCase()
+  const rung = LOG_LEVEL_SCALE.findIndex((names) => names.includes(normalized))
+  if (rung === -1) return null
+  const t = rung / (LOG_LEVEL_SCALE.length - 1)
+
+  let [t0, c0] = LOG_LEVEL_GRADIENT[0]
+  let [t1, c1] = LOG_LEVEL_GRADIENT[LOG_LEVEL_GRADIENT.length - 1]
+  for (let i = 0; i < LOG_LEVEL_GRADIENT.length - 1; i++) {
+    if (t >= LOG_LEVEL_GRADIENT[i][0] && t <= LOG_LEVEL_GRADIENT[i + 1][0]) {
+      ;[t0, c0] = LOG_LEVEL_GRADIENT[i]
+      ;[t1, c1] = LOG_LEVEL_GRADIENT[i + 1]
+      break
+    }
+  }
+  const localT = t1 === t0 ? 0 : (t - t0) / (t1 - t0)
+  return [
+    Math.round(c0[0] + (c1[0] - c0[0]) * localT),
+    Math.round(c0[1] + (c1[1] - c0[1]) * localT),
+    Math.round(c0[2] + (c1[2] - c0[2]) * localT),
+  ]
+}
+
+const LogLevelValue: React.FC<{ value: string }> = ({ value }) => {
+  const rgb = logLevelColor(value)
+  if (!rgb) return <>{value}</>
+  const [r, g, b] = rgb
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 10px',
+        borderRadius: 20,
+        fontSize: 12,
+        fontWeight: 600,
+        background: `rgba(${r}, ${g}, ${b}, 0.15)`,
+        color: `rgb(${r}, ${g}, ${b})`,
+        border: `1px solid rgba(${r}, ${g}, ${b}, 0.4)`,
+      }}
+    >
+      {value}
+    </span>
+  )
 }
 
 export const AlertDetailPage: React.FC = () => {
@@ -151,7 +217,19 @@ export const AlertDetailPage: React.FC = () => {
 
   return (
     <AppLayout>
-      <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
+      <div
+        style={{
+          padding: '24px 32px',
+          maxWidth: 1300,
+          margin: '0 auto',
+          width: '100%',
+          display: 'flex',
+          gap: 24,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}
+      >
+      <div style={{ flex: '1 1 600px', maxWidth: 900, minWidth: 0 }}>
         <div
           style={{
             fontSize: 12,
@@ -202,6 +280,7 @@ export const AlertDetailPage: React.FC = () => {
                 label={ALERT_STATUS_LABELS[alert.status]}
                 size="sm"
               />
+              <Badge color="purple" label={alert.threat_type} size="sm" />
             </div>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
               Создан: {format(new Date(alert.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
@@ -214,32 +293,39 @@ export const AlertDetailPage: React.FC = () => {
             </p>
           </div>
 
-          {canWrite && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(true)}>
-                Назначить
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowRuleModal(true)}>
-                В правило
-              </Button>
-              {alert.status === 'escalated' ? (
-                alert.case_id && (
-                  <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
-                    Открыть дело
-                  </Button>
-                )
-              ) : alert.status === 'dismissed' ? null : (
-                <>
-                  <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
-                    Эскалировать
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={handleDismiss} isLoading={isActing}>
-                    Отклонить
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <AnalyzeDropdownButton
+              ips={alert.parsed_internal_ips}
+              accounts={alert.parsed_accounts}
+              files={alert.parsed_files}
+            />
+            {canWrite && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setShowAssignModal(true)}>
+                  Назначить
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setShowRuleModal(true)}>
+                  В правило
+                </Button>
+                {alert.status === 'escalated' ? (
+                  alert.case_id && (
+                    <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
+                      Открыть дело
+                    </Button>
+                  )
+                ) : alert.status === 'dismissed' ? null : (
+                  <>
+                    <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
+                      Эскалировать
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={handleDismiss} isLoading={isActing}>
+                      Отклонить
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <div
@@ -254,10 +340,83 @@ export const AlertDetailPage: React.FC = () => {
           }}
         >
           <Field label="Источник">{alert.source ?? '—'}</Field>
+          <Field label="Индекс">
+            {alert.source_index ? (
+              <code
+                style={{
+                  fontSize: 12,
+                  background: 'var(--bg-tertiary)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {alert.source_index}
+              </code>
+            ) : (
+              '—'
+            )}
+          </Field>
           <Field label="Назначен">{assigneeLabel(alert.assigned_to)}</Field>
-          <Field label="Описание">
-            {alert.description ? (
-              <span style={{ whiteSpace: 'pre-wrap' }}>{alert.description}</span>
+          <Field label="URL">
+            {alert.parsed_urls.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {alert.parsed_urls.map((url) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: 'var(--accent)', wordBreak: 'break-all', fontSize: 13 }}
+                  >
+                    {url}
+                  </a>
+                ))}
+              </div>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Внешние IP-адреса">
+            {alert.parsed_external_ips.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {alert.parsed_external_ips.map((ip) => (
+                  <Badge key={ip} color="red" label={ip} size="sm" />
+                ))}
+              </div>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Внутренние IP-адреса">
+            {alert.parsed_internal_ips.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {alert.parsed_internal_ips.map((ip) => (
+                  <Badge key={ip} color="blue" label={ip} size="sm" />
+                ))}
+              </div>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Учётные записи">
+            {alert.parsed_accounts.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {alert.parsed_accounts.map((account) => (
+                  <Badge key={account} color="purple" label={account} size="sm" />
+                ))}
+              </div>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Файлы">
+            {alert.parsed_files.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {alert.parsed_files.map((file) => (
+                  <Badge key={file} color="teal" label={file} size="sm" />
+                ))}
+              </div>
             ) : (
               '—'
             )}
@@ -280,6 +439,82 @@ export const AlertDetailPage: React.FC = () => {
               </Link>
             </div>
           )}
+          <Field label="Описание">
+            {alert.description_table && alert.description_table.length > 0 ? (
+              <div
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  maxHeight: 420,
+                  overflowY: 'auto',
+                }}
+              >
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary)' }}>
+                      <th
+                        style={{
+                          textAlign: 'left',
+                          padding: '6px 10px',
+                          color: 'var(--text-secondary)',
+                          fontWeight: 500,
+                          borderBottom: '1px solid var(--border)',
+                          width: '38%',
+                        }}
+                      >
+                        Поле
+                      </th>
+                      <th
+                        style={{
+                          textAlign: 'left',
+                          padding: '6px 10px',
+                          color: 'var(--text-secondary)',
+                          fontWeight: 500,
+                          borderBottom: '1px solid var(--border)',
+                        }}
+                      >
+                        Значение
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alert.description_table.map((row) => (
+                      <tr key={row.key} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td
+                          style={{
+                            padding: '5px 10px',
+                            color: 'var(--text-secondary)',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                            fontSize: 11.5,
+                            wordBreak: 'break-word',
+                            verticalAlign: 'top',
+                          }}
+                        >
+                          {row.key}
+                        </td>
+                        <td style={{ padding: '5px 10px', wordBreak: 'break-word', verticalAlign: 'top' }}>
+                          {row.key.toLowerCase() === 'log.level' ? (
+                            <LogLevelValue value={row.value} />
+                          ) : (
+                            row.value
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : alert.description ? (
+              <span style={{ whiteSpace: 'pre-wrap' }}>{alert.description}</span>
+            ) : (
+              '—'
+            )}
+          </Field>
+        </div>
+      </div>
+
+        <div style={{ flex: '1 1 320px', maxWidth: 380, minWidth: 280 }}>
+          <SimilarAlertsPanel alertId={alert.id} />
         </div>
       </div>
 
