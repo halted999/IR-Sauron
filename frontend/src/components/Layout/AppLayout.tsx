@@ -154,6 +154,28 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
+        {/* Help button */}
+        {user && (
+          <Link
+            to="/help"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '5px 12px',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontSize: 13,
+              fontWeight: 500,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Справка
+          </Link>
+        )}
+
         {/* Admin panel button */}
         {user?.role === 'admin' && (
           <Link

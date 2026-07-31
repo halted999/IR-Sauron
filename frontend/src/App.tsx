@@ -12,6 +12,7 @@ import { StatisticsPage } from './pages/StatisticsPage'
 import { AnalysisPage } from './pages/AnalysisPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminPanelPage } from './pages/AdminPanelPage'
+import { HelpPage } from './pages/HelpPage'
 import { FullPageSpinner } from './components/ui/Spinner'
 import { ToastContainer } from './components/ui/ToastContainer'
 
@@ -106,6 +107,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <AdminPanelPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/help"
+          element={
+            <ProtectedRoute>
+              <HelpPage />
             </ProtectedRoute>
           }
         />
