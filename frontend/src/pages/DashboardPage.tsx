@@ -13,11 +13,12 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
+import { ElfLeafIcon } from '../components/ui/ElfLeafIcon'
 import { Pagination } from '../components/ui/Pagination'
 import type { Case, CaseStatus, CaseSeverity, CreateCaseData } from '../types'
 import {
   CASE_STATUS_LABELS, CASE_SEVERITY_LABELS,
-  getCaseStatusLabel, getSauronEyeVariant,
+  getCaseStatusLabel, getCaseStatusIconVariant,
 } from '../types'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
@@ -319,13 +320,21 @@ export const DashboardPage: React.FC = () => {
                     </Td>
                     <Td>
                       {(() => {
-                        const eyeVariant = theme === 'sauron' ? getSauronEyeVariant(c.status) : null
+                        const iconVariant =
+                          theme === 'sauron' || theme === 'elves'
+                            ? getCaseStatusIconVariant(c.status)
+                            : null
+                        const icon = iconVariant
+                          ? theme === 'elves'
+                            ? <ElfLeafIcon variant={iconVariant} />
+                            : <SauronEyeIcon variant={iconVariant} />
+                          : undefined
                         return (
                           <Badge
                             color={STATUS_COLOR[c.status] as 'blue'}
-                            label={eyeVariant ? '' : getCaseStatusLabel(c.status, theme)}
+                            label={iconVariant ? '' : getCaseStatusLabel(c.status, theme)}
                             size="sm"
-                            icon={eyeVariant ? <SauronEyeIcon variant={eyeVariant} /> : undefined}
+                            icon={icon}
                           />
                         )
                       })()}

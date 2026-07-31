@@ -12,6 +12,7 @@ const THEME_OPTIONS: { value: Theme; label: string; swatch: string[] }[] = [
   { value: 'light', label: 'Светлая', swatch: ['#ffffff', '#eaeef2', '#0969da'] },
   { value: 'dark', label: 'Тёмная', swatch: ['#0d1117', '#21262d', '#58a6ff'] },
   { value: 'sauron', label: 'Саурон', swatch: ['#0a0402', '#22100a', '#ff5a1f'] },
+  { value: 'elves', label: 'Эльфы', swatch: ['#ffffff', '#e3f0e3', '#2e8b4f'] },
 ]
 
 export const ProfilePage: React.FC = () => {

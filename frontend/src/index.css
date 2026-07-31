@@ -70,6 +70,33 @@
   background: radial-gradient(ellipse at top, #2a0f06 0%, #0a0402 55%);
 }
 
+/* Elves theme — Lothlórien white and green */
+:root[data-theme='elves'] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f8f2;
+  --bg-tertiary: #e3f0e3;
+  --border: #b8d9b8;
+  --text-primary: #14361f;
+  --text-secondary: #4a7a52;
+  --accent: #2e8b4f;
+  --accent-hover: #1f6b3a;
+  --success: #2e8b4f;
+  --warning: #c9a227;
+  --danger: #b23a3a;
+  --event-attacker: #b23a3a;
+  --event-detection: #c9a227;
+  --event-ir: #2e8b4f;
+  --event-inference: #3a8fae;
+  --event-legal: #7a5fae;
+  --confidence-confirmed: #2e8b4f;
+  --confidence-corroborated: #c9a227;
+  --confidence-hypothesis: #4a7a52;
+}
+
+:root[data-theme='elves'] body {
+  background: radial-gradient(ellipse at top, #eaf6ea 0%, #ffffff 55%);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

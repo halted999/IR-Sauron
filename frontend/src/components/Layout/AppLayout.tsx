@@ -83,6 +83,36 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           </div>
         )}
 
+        {/* Elves theme: full-width background watermark, in Sindarin */}
+        {theme === 'elves' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                letterSpacing: '0.4em',
+                textTransform: 'uppercase',
+                color: 'rgba(46,139,79,0.16)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+              }}
+            >
+              berio i pherian
+            </span>
+          </div>
+        )}
+
         <div
           style={{
             position: 'relative',

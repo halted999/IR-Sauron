@@ -366,7 +366,9 @@ export function getCaseStatusLabel(status: CaseStatus, theme: string): string {
   return CASE_STATUS_LABELS[status]
 }
 
-export function getSauronEyeVariant(
+// Shared by the Sauron eye icon and the Elves leaf icon — both reuse the
+// same 4-way variant mapping from case status, just rendered differently.
+export function getCaseStatusIconVariant(
   status: CaseStatus,
 ): 'open' | 'closed' | 'review' | 'active' | null {
   if (status === 'open') return 'open'

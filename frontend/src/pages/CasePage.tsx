@@ -22,10 +22,11 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
+import { ElfLeafIcon } from '../components/ui/ElfLeafIcon'
 import type { Event, CaseStatus, CaseSeverity, CreateEventData } from '../types'
 import {
   CASE_SEVERITY_LABELS, EVENT_TYPE_LABELS, CONFIDENCE_LABELS,
-  CASE_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
+  CASE_STATUS_LABELS, getCaseStatusLabel, getCaseStatusIconVariant,
 } from '../types'
 
 type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts' | 'report'
@@ -255,7 +256,13 @@ export const CasePage: React.FC = () => {
     user?.role === 'ir_lead' ||
     user?.role === 'investigator'
 
-  const statusEyeVariant = theme === 'sauron' ? getSauronEyeVariant(currentCase.status) : null
+  const statusIconVariant =
+    theme === 'sauron' || theme === 'elves' ? getCaseStatusIconVariant(currentCase.status) : null
+  const statusIcon = statusIconVariant
+    ? theme === 'elves'
+      ? <ElfLeafIcon variant={statusIconVariant} />
+      : <SauronEyeIcon variant={statusIconVariant} />
+    : null
 
   return (
     <AppLayout>
@@ -333,7 +340,7 @@ export const CasePage: React.FC = () => {
                 )}
                 {canEdit ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {statusEyeVariant && <SauronEyeIcon variant={statusEyeVariant} />}
+                    {statusIcon}
                     <select
                       value={currentCase.status}
                       onChange={(e) => handleStatusChange(e.target.value as CaseStatus)}
@@ -358,11 +365,9 @@ export const CasePage: React.FC = () => {
                 ) : (
                   <Badge
                     color={STATUS_COLOR[currentCase.status] as 'blue'}
-                    label={statusEyeVariant ? '' : getCaseStatusLabel(currentCase.status, theme)}
+                    label={statusIconVariant ? '' : getCaseStatusLabel(currentCase.status, theme)}
                     size="sm"
-                    icon={
-                      statusEyeVariant ? <SauronEyeIcon variant={statusEyeVariant} /> : undefined
-                    }
+                    icon={statusIcon ?? undefined}
                   />
                 )}
                 <Badge
