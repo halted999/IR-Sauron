@@ -1,4 +1,5 @@
 import apiClient from './client'
+import type { UserRole } from '../types'
 
 export interface AppSettings {
   timezone: string
@@ -57,4 +58,50 @@ export async function backupDatabase(password: string): Promise<void> {
     'irsauron-db-backup.dump.enc',
   )
   downloadBlob(response.data as Blob, filename)
+}
+
+export const RESTORE_CONFIRM_PHRASE = 'ВОССТАНОВИТЬ'
+
+export async function restoreConfig(file: File, password: string, confirm: string): Promise<AppSettings> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('password', password)
+  formData.append('confirm', confirm)
+  const response = await apiClient.post<AppSettings>('/admin/restore/config', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
+export async function restoreDatabase(file: File, password: string, confirm: string): Promise<void> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('password', password)
+  formData.append('confirm', confirm)
+  await apiClient.post('/admin/restore/database', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export interface RolePermissionItem {
+  role: UserRole
+  permission: string
+  allowed: boolean
+}
+
+export interface RolePermissionsResponse {
+  permissions: RolePermissionItem[]
+  labels: Record<string, string>
+}
+
+export async function getRolePermissions(): Promise<RolePermissionsResponse> {
+  const response = await apiClient.get<RolePermissionsResponse>('/admin/role-permissions')
+  return response.data
+}
+
+export async function updateRolePermissions(
+  permissions: RolePermissionItem[],
+): Promise<RolePermissionsResponse> {
+  const response = await apiClient.put<RolePermissionsResponse>('/admin/role-permissions', { permissions })
+  return response.data
 }

@@ -152,12 +152,12 @@ export const AlertsPage: React.FC = () => {
   }
 
   const handleEscalate = async (alert: Alert) => {
-    if (!confirm(`Эскалировать алерт "${alert.title}" в новое дело?`)) return
+    if (!confirm(`Эскалировать алерт "${alert.title}" в новый инцидент?`)) return
     setEscalatingId(alert.id)
     try {
       const newCase = await escalateAlert(alert.id, {})
       updateAlertInStore({ ...alert, status: 'escalated', case_id: newCase.id })
-      toast.success(`Дело «${newCase.title}» создано из алерта`)
+      toast.success(`Инцидент «${newCase.title}» создан из алерта`)
       navigate(`/cases/${newCase.id}`)
     } catch {
       toast.error('Ошибка эскалации алерта')
@@ -199,18 +199,18 @@ export const AlertsPage: React.FC = () => {
 
   const handleBulkEscalate = async () => {
     if (selectedIds.size === 0) return
-    if (!confirm(`Создать одно дело из ${selectedIds.size} выбранных алертов?`)) return
+    if (!confirm(`Создать один инцидент из ${selectedIds.size} выбранных алертов?`)) return
     setIsBulkEscalating(true)
     try {
       const newCase = await escalateAlertsBulk({ alert_ids: Array.from(selectedIds) })
       alerts
         .filter((a) => selectedIds.has(a.id))
         .forEach((a) => updateAlertInStore({ ...a, status: 'escalated', case_id: newCase.id }))
-      toast.success(`Дело «${newCase.title}» создано из ${selectedIds.size} алертов`)
+      toast.success(`Инцидент «${newCase.title}» создан из ${selectedIds.size} алертов`)
       setSelectedIds(new Set())
       navigate(`/cases/${newCase.id}`)
     } catch {
-      toast.error('Ошибка создания дела из алертов')
+      toast.error('Ошибка создания инцидента из алертов')
     } finally {
       setIsBulkEscalating(false)
     }
@@ -308,16 +308,13 @@ export const AlertsPage: React.FC = () => {
         >
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Алерты</h1>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              Очередь триажа алертов до заведения дела
-            </p>
           </div>
           {canWrite && (
             <div style={{ display: 'flex', gap: 8 }}>
               {selectedIds.size > 0 && !showArchive && (
                 <>
                   <Button variant="primary" onClick={handleBulkEscalate} isLoading={isBulkEscalating}>
-                    Создать дело ({selectedIds.size})
+                    Создать инцидент ({selectedIds.size})
                   </Button>
                   <Button variant="secondary" onClick={() => setShowRuleFromSelection(true)}>
                     В правило ({selectedIds.size})
@@ -484,6 +481,7 @@ export const AlertsPage: React.FC = () => {
                   <Th>Критичность</Th>
                   <Th>Статус</Th>
                   <Th>Назначено</Th>
+                  <Th>Тэги</Th>
                   <Th>Создан</Th>
                   {canWrite && <Th>Действия</Th>}
                 </tr>
@@ -504,7 +502,7 @@ export const AlertsPage: React.FC = () => {
                           checked={selectedIds.has(a.id)}
                           disabled={!isSelectable(a)}
                           onChange={() => toggleSelected(a.id)}
-                          title={isSelectable(a) ? undefined : 'Алерт уже эскалирован в дело'}
+                          title={isSelectable(a) ? undefined : 'Алерт уже эскалирован в инцидент'}
                           style={{
                             cursor: isSelectable(a) ? 'pointer' : 'not-allowed',
                             opacity: isSelectable(a) ? 1 : 0.4,
@@ -579,6 +577,30 @@ export const AlertsPage: React.FC = () => {
                     <Td style={{ fontSize: 12, color: a.assigned_to ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                       {assigneeLabel(a.assigned_to)}
                     </Td>
+                    <Td>
+                      {a.tags.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 180 }}>
+                          {a.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              style={{
+                                fontSize: 11,
+                                padding: '1px 8px',
+                                borderRadius: 10,
+                                background: 'rgba(88,166,255,0.15)',
+                                color: 'var(--accent)',
+                                border: '1px solid rgba(88,166,255,0.4)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+                      )}
+                    </Td>
                     <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
                     </Td>
@@ -594,7 +616,7 @@ export const AlertsPage: React.FC = () => {
                               onClick={() => navigate(`/cases/${a.case_id}`)}
                               style={linkBtnStyle}
                             >
-                              Открыть дело
+                              Открыть инцидент
                             </button>
                           ) : (
                             <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>

@@ -49,7 +49,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
     setIsLoading(true)
     getAlerts({ case_id: caseId })
       .then(setAlerts)
-      .catch(() => toast.error('Ошибка загрузки алертов дела'))
+      .catch(() => toast.error('Ошибка загрузки алертов инцидента'))
       .finally(() => setIsLoading(false))
     setSelectedIds(new Set())
   }, [caseId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -71,7 +71,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
 
   const handleDetach = async () => {
     if (selectedIds.size === 0) return
-    if (!confirm(`Отсоединить ${selectedIds.size} алертов от дела?`)) return
+    if (!confirm(`Отсоединить ${selectedIds.size} алертов от инцидента?`)) return
     setIsDetaching(true)
     try {
       await Promise.all(Array.from(selectedIds).map((id) => detachAlert(id)))
@@ -105,7 +105,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
           fontSize: 14,
         }}
       >
-        Алерты не добавлены в это дело.
+        Алерты не добавлены в этот инцидент.
       </div>
     )
   }

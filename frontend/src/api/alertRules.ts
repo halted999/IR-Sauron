@@ -1,7 +1,7 @@
 import apiClient from './client'
 import type { CaseSeverity } from '../types'
 
-export type AlertRuleAction = 'suppress' | 'escalate'
+export type AlertRuleAction = 'suppress' | 'escalate' | 'assign_tag'
 
 export interface AlertRule {
   id: string
@@ -12,6 +12,7 @@ export interface AlertRule {
   match_description_contains?: string | null
   action: AlertRuleAction
   target_case_id?: string | null
+  tag_value?: string | null
   is_enabled: boolean
   applied_count: number
   last_applied_at?: string | null
@@ -28,6 +29,7 @@ export interface CreateAlertRuleData {
   match_description_contains?: string
   action: AlertRuleAction
   target_case_id?: string
+  tag_value?: string
   is_enabled?: boolean
 }
 
@@ -42,6 +44,7 @@ export interface AlertRuleFromSelectionData {
   match_description_contains?: string
   action: AlertRuleAction
   target_case_id?: string
+  tag_value?: string
 }
 
 export interface AlertRuleFromSelectionResult {

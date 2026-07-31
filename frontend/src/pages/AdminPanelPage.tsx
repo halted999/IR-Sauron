@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useAuthStore } from '../store/auth'
 import { useToastStore } from '../store/toast'
+import { useMaintenanceStore } from '../store/maintenance'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -11,10 +12,13 @@ import { Spinner } from '../components/ui/Spinner'
 import { UserFormModal } from '../components/Admin/UserFormModal'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import {
-  getAppSettings, updateAppSettings, backupConfig, backupDatabase,
+  getAppSettings, updateAppSettings, backupConfig, backupDatabase, getRolePermissions, updateRolePermissions,
+  restoreConfig, restoreDatabase, RESTORE_CONFIRM_PHRASE,
 } from '../api/admin'
-import type { AppSettings } from '../api/admin'
-import { getUsers, createUser, updateUser, deactivateUser, deleteUserPermanently } from '../api/users'
+import type { AppSettings, RolePermissionItem } from '../api/admin'
+import {
+  getUsers, createUser, updateUser, deactivateUser, activateUser, deleteUserPermanently,
+} from '../api/users'
 import type { CreateUserData, UpdateUserData } from '../api/users'
 import {
   getEventSources, createEventSource, updateEventSource, deleteEventSource,
@@ -30,7 +34,7 @@ type Section = 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'notifications', label: 'Оповещения' },
   { key: 'users', label: 'Пользователи' },
-  { key: 'roles', label: 'Роли и группы' },
+  { key: 'roles', label: 'Роли пользователей' },
   { key: 'event_sources', label: 'Источники алертов' },
   { key: 'timezone', label: 'Временная зона' },
   { key: 'backup', label: 'Импорт/бекап' },
@@ -42,10 +46,10 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 }
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
-  admin: 'Полный доступ ко всем делам и разделам, управление пользователями и настройками системы.',
-  ir_lead: 'Полный доступ ко всем делам независимо от участия: создание, редактирование, назначение статусов.',
-  investigator: 'Ведёт расследование: создаёт события и эскалирует алерты в делах, где указан участником.',
-  observer: 'Только просмотр дел и таймлайна, без права редактирования.',
+  admin: 'Полный доступ ко всем инцидентам и разделам, управление пользователями и настройками системы.',
+  ir_lead: 'Полный доступ ко всем инцидентам независимо от участия: создание, редактирование, назначение статусов.',
+  investigator: 'Ведёт расследование: создаёт события и эскалирует алерты в инцидентах, где указан участником.',
+  observer: 'Только просмотр инцидентов и таймлайна, без права редактирования.',
   external_contractor: 'Внешний подрядчик с ограниченным доступом только на чтение.',
 }
 
@@ -68,6 +72,42 @@ const TIMEZONES = [
   'Asia/Dubai',
   'Asia/Shanghai',
 ]
+
+function tzOffsetMinutes(timeZone: string, date: Date = new Date()): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const parts: Record<string, string> = {}
+  dtf.formatToParts(date).forEach((p) => {
+    if (p.type !== 'literal') parts[p.type] = p.value
+  })
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second),
+  )
+  return Math.round((asUTC - date.getTime()) / 60000)
+}
+
+function tzOffsetLabel(timeZone: string): string {
+  let minutes: number
+  try {
+    minutes = tzOffsetMinutes(timeZone)
+  } catch {
+    return ''
+  }
+  const sign = minutes >= 0 ? '+' : '-'
+  const abs = Math.abs(minutes)
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  return m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2, '0')}`
+}
 
 export const AdminPanelPage: React.FC = () => {
   const { user } = useAuthStore()
@@ -189,7 +229,7 @@ const NotificationsSection: React.FC = () => {
     <div>
       <SectionHeader
         title="Оповещения на почту и в Telegram-бота"
-        description="Настройки подключения. Реальная отправка сообщений по событиям (создание дела, эскалация и т.д.) в этот экран не входит — здесь только хранение конфигурации."
+        description="Настройки подключения. Реальная отправка сообщений по событиям (создание инцидента, эскалация и т.д.) в этот экран не входит — здесь только хранение конфигурации."
       />
 
       <Card>
@@ -352,6 +392,16 @@ const UsersSection: React.FC = () => {
     }
   }
 
+  const handleActivate = async (u: User) => {
+    try {
+      const updated = await activateUser(u.id)
+      setUsers((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+      toast.success('Пользователь активирован')
+    } catch {
+      toast.error('Ошибка активации')
+    }
+  }
+
   const handleDelete = async () => {
     if (!deletingUser) return
     try {
@@ -434,12 +484,19 @@ const UsersSection: React.FC = () => {
                       >
                         Изменить
                       </button>
-                      {u.is_active && (
+                      {u.is_active ? (
                         <button
                           onClick={() => setDeactivatingUser(u)}
                           style={{ ...linkBtnStyle, color: 'var(--danger)' }}
                         >
                           Деактивировать
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleActivate(u)}
+                          style={{ ...linkBtnStyle, color: 'var(--success)' }}
+                        >
+                          Активировать
                         </button>
                       )}
                       {u.id !== currentUser?.id && (
@@ -481,7 +538,7 @@ const UsersSection: React.FC = () => {
         onClose={() => setDeletingUser(null)}
         onConfirm={handleDelete}
         title="Удалить пользователя"
-        message={`Учётная запись «${deletingUser?.username}» будет удалена безвозвратно, вместе с её данными участия в делах. Это действие нельзя отменить.`}
+        message={`Учётная запись «${deletingUser?.username}» будет удалена безвозвратно, вместе с её данными участия в инцидентах. Это действие нельзя отменить.`}
         confirmLabel="Удалить"
         isDanger
       />
@@ -489,32 +546,143 @@ const UsersSection: React.FC = () => {
   )
 }
 
-// ─── Roles reference ────────────────────────────────────────────────────────────
+// ─── Roles ──────────────────────────────────────────────────────────────────────
 
-const RolesSection: React.FC = () => (
-  <div>
-    <SectionHeader
-      title="Роли и группы пользователей"
-      description="Группы соответствуют встроенным ролям доступа. Управление ролью пользователя — в разделе «Пользователи»."
-    />
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([role, label]) => (
-        <div
-          key={role}
-          style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            padding: '14px 16px',
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{label}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ROLE_DESCRIPTIONS[role]}</div>
+const RolesSection: React.FC = () => {
+  const toast = useToastStore()
+  const [permissions, setPermissions] = useState<RolePermissionItem[]>([])
+  const [labels, setLabels] = useState<Record<string, string>>({})
+  const [isLoading, setIsLoading] = useState(true)
+  const [expandedRole, setExpandedRole] = useState<UserRole | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    getRolePermissions()
+      .then((res) => {
+        setPermissions(res.permissions)
+        setLabels(res.labels)
+      })
+      .catch(() => toast.error('Ошибка загрузки прав доступа'))
+      .finally(() => setIsLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const permsForRole = (role: UserRole) => permissions.filter((p) => p.role === role)
+
+  const handleToggle = async (role: UserRole, permission: string, allowed: boolean) => {
+    const key = `${role}:${permission}`
+    setSavingKey(key)
+    setPermissions((prev) =>
+      prev.map((p) => (p.role === role && p.permission === permission ? { ...p, allowed } : p)),
+    )
+    try {
+      await updateRolePermissions([{ role, permission, allowed }])
+    } catch {
+      toast.error('Ошибка сохранения прав')
+      setPermissions((prev) =>
+        prev.map((p) => (p.role === role && p.permission === permission ? { ...p, allowed: !allowed } : p)),
+      )
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Роли пользователей"
+        description="Нажмите на роль, чтобы настроить её права доступа. Управление ролью конкретного пользователя — в разделе «Пользователи». Роль «Администратор» всегда обладает полным доступом и не настраивается."
+      />
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '30px 0' }}>
+          <Spinner size={26} />
         </div>
-      ))}
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([role, label]) => {
+            const isAdmin = role === 'admin'
+            const isExpanded = expandedRole === role
+            return (
+              <div
+                key={role}
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  onClick={() => !isAdmin && setExpandedRole(isExpanded ? null : role)}
+                  disabled={isAdmin}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '14px 16px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    cursor: isAdmin ? 'default' : 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ROLE_DESCRIPTIONS[role]}</div>
+                  </div>
+                  {!isAdmin && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap', marginLeft: 12 }}>
+                      {isExpanded ? '▲ Свернуть' : '▼ Настроить'}
+                    </span>
+                  )}
+                </button>
+
+                {isExpanded && !isAdmin && (
+                  <div
+                    style={{
+                      padding: '2px 16px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      borderTop: '1px solid var(--border)',
+                    }}
+                  >
+                    {permsForRole(role).map((p) => (
+                      <label
+                        key={p.permission}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          cursor: 'pointer',
+                          padding: '8px 0',
+                          color: 'var(--text-primary)',
+                          opacity: savingKey === `${role}:${p.permission}` ? 0.6 : 1,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={p.allowed}
+                          disabled={savingKey === `${role}:${p.permission}`}
+                          onChange={(e) => handleToggle(role, p.permission, e.target.checked)}
+                          style={{ width: 'auto' }}
+                        />
+                        <span style={{ fontSize: 13 }}>{labels[p.permission] ?? p.permission}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
-  </div>
-)
+  )
+}
 
 // ─── Event Sources (Elastic / TheHive) ────────────────────────────────────────
 
@@ -779,7 +947,7 @@ const TimezoneSection: React.FC = () => {
           <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ maxWidth: 320 }}>
             {TIMEZONES.map((tz) => (
               <option key={tz} value={tz}>
-                {tz}
+                {tz} ({tzOffsetLabel(tz)})
               </option>
             ))}
           </select>
@@ -844,7 +1012,7 @@ const BackupSection: React.FC = () => {
     <div>
       <SectionHeader
         title="Импорт/бекап конфигурации и базы данных"
-        description="Бэкапы шифруются паролем (AES-256-GCM) прямо на сервере перед скачиванием. Импорт (восстановление) в этой версии не реализован — сохраните пароль в надёжном месте, он понадобится для расшифровки."
+        description="Бэкапы шифруются паролем (AES-256-GCM) прямо на сервере перед скачиванием. Импорт полностью заменяет текущие данные тем, что содержится в файле бэкапа — действие необратимо."
       />
 
       <Card>
@@ -886,7 +1054,96 @@ const BackupSection: React.FC = () => {
           </Button>
         </div>
       </Card>
+
+      <RestoreCard
+        title="Импорт конфигурации"
+        description="Восстанавливает настройки оповещений и временной зоны из зашифрованного файла бэкапа. Текущие настройки будут перезаписаны."
+        confirmMessage="Настройки системы будут перезаписаны содержимым бэкапа. Продолжить?"
+        successMessage="Конфигурация восстановлена"
+        onRestore={async (file, password, confirmText) => {
+          await restoreConfig(file, password, confirmText)
+        }}
+      />
+
+      <RestoreCard
+        title="Импорт базы данных"
+        description="Полностью заменяет текущую базу данных содержимым файла бэкапа (pg_restore --clean). Восстановление выполняется в фоне — на это время появится страница технического обслуживания."
+        confirmMessage="Это необратимо заменит ВСЮ текущую базу данных (дела, алерты, пользователей и т.д.) содержимым файла бэкапа. Продолжить?"
+        successMessage="Восстановление запущено"
+        onRestore={async (file, password, confirmText) => {
+          await restoreDatabase(file, password, confirmText)
+          useMaintenanceStore.getState().setActive(true, 'database restore in progress')
+        }}
+      />
     </div>
+  )
+}
+
+const RestoreCard: React.FC<{
+  title: string
+  description: string
+  confirmMessage: string
+  successMessage: string
+  onRestore: (file: File, password: string, confirmText: string) => Promise<void>
+}> = ({ title, description, confirmMessage, successMessage, onRestore }) => {
+  const toast = useToastStore()
+  const [file, setFile] = useState<File | null>(null)
+  const [password, setPassword] = useState('')
+  const [confirmText, setConfirmText] = useState('')
+  const [isRestoring, setIsRestoring] = useState(false)
+
+  const canSubmit = !!file && password.trim().length >= 8 && confirmText.trim() === RESTORE_CONFIRM_PHRASE
+
+  const handleSubmit = async () => {
+    if (!file || !canSubmit) return
+    if (!confirm(confirmMessage)) return
+    setIsRestoring(true)
+    try {
+      await onRestore(file, password.trim(), confirmText.trim())
+      toast.success(successMessage)
+      setFile(null)
+      setPassword('')
+      setConfirmText('')
+    } catch {
+      toast.error('Ошибка восстановления — проверьте пароль и файл бэкапа')
+    } finally {
+      setIsRestoring(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>{title}</CardTitle>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>{description}</div>
+      <Field label="Файл бэкапа (.enc)">
+        <input
+          type="file"
+          accept=".enc"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        />
+      </Field>
+      <Field label="Пароль шифрования">
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Пароль, указанный при создании бэкапа"
+        />
+      </Field>
+      <Field label={`Подтверждение — введите «${RESTORE_CONFIRM_PHRASE}»`}>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          placeholder={RESTORE_CONFIRM_PHRASE}
+        />
+      </Field>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <Button variant="danger" size="sm" onClick={handleSubmit} isLoading={isRestoring} disabled={!canSubmit}>
+          Восстановить (заменит текущие данные)
+        </Button>
+      </div>
+    </Card>
   )
 }
 

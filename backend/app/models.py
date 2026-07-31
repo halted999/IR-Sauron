@@ -93,6 +93,7 @@ class EventSourceType(str, enum.Enum):
 class AlertRuleAction(str, enum.Enum):
     suppress = "suppress"
     escalate = "escalate"
+    assign_tag = "assign_tag"
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────
@@ -206,6 +207,12 @@ class Case(Base):
     incident_closed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    impact_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attribution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Free-form analyst-written report, shown alongside the auto-compiled
+    # summary on the "Отчёт" tab.
+    report_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -278,6 +285,8 @@ class Alert(Base):
     # so it must be captured separately at ingestion time. Null for alerts
     # ingested before this field existed, or from non-Elastic sources.
     source_index: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Free-form analyst tags, manually edited or assigned by an alert rule.
+    tags: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
     # Full raw event document as ingested from the source (e.g. the Elastic ECS
     # _source doc) — kept untruncated so ECS field extraction is reliable, unlike
     # `description` which stores only a 4000-char preview for display.
@@ -467,6 +476,13 @@ class EventLink(Base):
     )
     link_type: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Fields merged in from the old standalone "add fact" form — the link
+    # itself now carries this descriptive metadata instead of a third node.
+    action_type: Mapped[Optional[ActionType]] = mapped_column(
+        SAEnum(ActionType, name="action_type", create_type=False), nullable=True
+    )
+    event_ts: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    mitre_technique: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -729,6 +745,7 @@ class AlertRule(Base):
     target_case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
     )
+    tag_value: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     applied_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -747,3 +764,25 @@ class AlertRule(Base):
     # Relationships
     target_case: Mapped[Optional["Case"]] = relationship("Case", foreign_keys=[target_case_id])
     creator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])
+
+
+class RolePermission(Base):
+    """
+    Per-role permission matrix, editable from the admin panel. `admin` is
+    intentionally never stored here — it always has full access, hardcoded in
+    app.core.rbac.has_permission, so the matrix can't lock every admin out of
+    the system. Rows for the other roles are seeded with the defaults that
+    matched the previously hardcoded RBAC checks; editing a row here changes
+    live behavior immediately (no caching).
+    """
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role", "permission", name="uq_role_permission"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(UserRole, name="user_role", create_type=False), nullable=False
+    )
+    permission: Mapped[str] = mapped_column(String(100), nullable=False)
+    allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

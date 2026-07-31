@@ -51,7 +51,7 @@ export const useCaseStore = create<CaseState>((set, get) => ({
       const { items, total } = await getCasesPaged(params)
       set({ cases: items, total, isLoading: false })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Ошибка загрузки дел'
+      const message = err instanceof Error ? err.message : 'Ошибка загрузки инцидентов'
       set({ isLoading: false, error: message })
       throw err
     }
@@ -63,7 +63,7 @@ export const useCaseStore = create<CaseState>((set, get) => ({
       const currentCase = await apiGetCase(id)
       set({ currentCase, isLoading: false })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Ошибка загрузки дела'
+      const message = err instanceof Error ? err.message : 'Ошибка загрузки инцидента'
       set({ isLoading: false, error: message })
       throw err
     }

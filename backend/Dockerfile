@@ -21,10 +21,24 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 
+# postgresql-client from Debian's own repo tracks whatever PG version ships
+# with the current release (e.g. trixie → 17), which can drift ahead of the
+# postgres:16 server in docker-compose.yml and break pg_dump/pg_restore
+# wire-protocol compatibility (e.g. PG17 dumps set session GUCs PG16 doesn't
+# know). Pin the client to the PGDG repo's 16.x build to match the server.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
-        postgresql-client \
         curl \
+        ca-certificates \
+        gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/* \
     # Непривилегированный пользователь
     && groupadd -r irt && useradd -r -g irt -d /app irt
@@ -55,8 +69,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         libpq-dev \
-        postgresql-client \
         curl \
+        ca-certificates \
+        gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-dev.txt* ./

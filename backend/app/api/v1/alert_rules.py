@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import log_action
-from app.core.rbac import require_write_access
+from app.core.rbac import require_manage_alert_rules
 from app.database import get_db
 from app.models import Alert, AlertRule, User
 from app.schemas import (
@@ -29,7 +29,7 @@ async def _get_rule_or_404(rule_id: uuid.UUID, db: AsyncSession) -> AlertRule:
 @router.get("", response_model=List[AlertRuleResponse])
 async def list_alert_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_write_access)],
+    _: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> List[AlertRule]:
     result = await db.execute(select(AlertRule).order_by(AlertRule.created_at.desc()))
     return list(result.scalars().all())
@@ -40,7 +40,7 @@ async def create_alert_rule(
     payload: AlertRuleCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_write_access)],
+    current_user: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> AlertRule:
     rule = AlertRule(**payload.model_dump(), created_by=current_user.id)
     db.add(rule)
@@ -63,7 +63,7 @@ async def update_alert_rule(
     payload: AlertRuleUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_write_access)],
+    current_user: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> AlertRule:
     rule = await _get_rule_or_404(rule_id, db)
     update_data = payload.model_dump(exclude_unset=True)
@@ -86,7 +86,7 @@ async def delete_alert_rule(
     rule_id: uuid.UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_write_access)],
+    current_user: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> None:
     rule = await _get_rule_or_404(rule_id, db)
 
@@ -105,7 +105,7 @@ async def create_alert_rule_from_selection(
     payload: AlertRuleFromSelectionRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_write_access)],
+    current_user: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> AlertRuleFromSelectionResponse:
     rule = AlertRule(
         name=payload.name,
@@ -115,6 +115,7 @@ async def create_alert_rule_from_selection(
         match_description_contains=payload.match_description_contains,
         action=payload.action,
         target_case_id=payload.target_case_id,
+        tag_value=payload.tag_value,
         created_by=current_user.id,
     )
     db.add(rule)
@@ -140,7 +141,7 @@ async def create_alert_rule_from_selection(
 async def preview_alert_rule_matches(
     payload: AlertRuleMatchPreviewRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_write_access)],
+    _: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> AlertRuleMatchPreviewResponse:
     """Live preview: how many currently-active alerts satisfy a set of match
     criteria, without persisting a rule or touching any alert."""

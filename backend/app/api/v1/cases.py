@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import log_action
 from app.core.auth import get_current_active_user
-from app.core.rbac import require_admin_or_lead, require_case_access
+from app.core.rbac import has_permission, require_case_access, require_manage_cases
 from app.database import get_db
 from app.models import (
     AuditLog, Branch, BranchStatus, Case, CaseParticipant,
@@ -56,8 +56,8 @@ async def list_cases(
 ) -> List[Case]:
     filters = [Case.is_deleted == False]  # noqa: E712
 
-    # Non-admin/lead users see only cases where they participate
-    if current_user.role not in (UserRole.admin, UserRole.ir_lead):
+    # Users without view_all_cases see only cases where they participate
+    if current_user.role != UserRole.admin and not await has_permission(db, current_user.role, "view_all_cases"):
         subq = (
             select(CaseParticipant.case_id)
             .where(CaseParticipant.user_id == current_user.id)
@@ -92,7 +92,7 @@ async def create_case(
     payload: CaseCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin_or_lead)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
 ) -> Case:
     case = Case(
         title=payload.title,
@@ -171,7 +171,7 @@ async def update_case(
     case = await _get_case_or_404(case_id, db)
     await require_case_access(case_id, current_user, db)
 
-    if current_user.role not in (UserRole.admin, UserRole.ir_lead):
+    if current_user.role != UserRole.admin and not await has_permission(db, current_user.role, "manage_cases"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     update_data = payload.model_dump(exclude_unset=True)
@@ -203,7 +203,7 @@ async def delete_case(
     case_id: uuid.UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin_or_lead)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
 ) -> None:
     case = await _get_case_or_404(case_id, db)
     case.is_deleted = True
@@ -233,7 +233,7 @@ async def add_participant(
     payload: CaseParticipantAdd,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin_or_lead)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
 ) -> CaseParticipant:
     await _get_case_or_404(case_id, db)
 
@@ -284,7 +284,7 @@ async def remove_participant(
     user_id: uuid.UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin_or_lead)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
 ) -> None:
     await _get_case_or_404(case_id, db)
 
@@ -324,7 +324,7 @@ async def get_audit_log(
 ) -> List[AuditLog]:
     await _get_case_or_404(case_id, db)
 
-    if current_user.role not in (UserRole.admin, UserRole.ir_lead):
+    if current_user.role != UserRole.admin and not await has_permission(db, current_user.role, "manage_cases"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     result = await db.execute(

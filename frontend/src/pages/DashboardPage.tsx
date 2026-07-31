@@ -70,7 +70,7 @@ export const DashboardPage: React.FC = () => {
     }
     if (filterStatus !== 'all') params.status = filterStatus
     if (filterSeverity !== 'all') params.severity = filterSeverity
-    fetchCases(params).catch(() => toast.error('Ошибка загрузки дел'))
+    fetchCases(params).catch(() => toast.error('Ошибка загрузки инцидентов'))
   }, [filterStatus, filterSeverity, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterStatusChange = (v: string) => {
@@ -95,17 +95,17 @@ export const DashboardPage: React.FC = () => {
         useCaseStore.setState((s) => ({
           cases: s.cases.map((c) => (c.id === updated.id ? updated : c)),
         }))
-        toast.success('Дело обновлено')
+        toast.success('Инцидент обновлён')
       } else {
         const newCase = await createCase(data)
         useCaseStore.setState((s) => ({ cases: [newCase, ...s.cases] }))
-        toast.success(`Дело «${newCase.title}» создано`)
+        toast.success(`Инцидент «${newCase.title}» создан`)
         navigate(`/cases/${newCase.id}`)
       }
       setShowModal(false)
       setEditingCase(null)
     } catch {
-      toast.error('Ошибка сохранения дела')
+      toast.error('Ошибка сохранения инцидента')
       throw new Error('save failed')
     }
   }
@@ -136,9 +136,9 @@ export const DashboardPage: React.FC = () => {
           }}
         >
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Дела</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Инциденты</h1>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              Управление делами по расследованию инцидентов ИБ
+              Управление инцидентами информационной безопасности
             </p>
           </div>
           {canCreate && (
@@ -149,7 +149,7 @@ export const DashboardPage: React.FC = () => {
                 setShowModal(true)
               }}
             >
-              + Создать дело
+              + Создать инцидент
             </Button>
           )}
         </div>
@@ -160,7 +160,7 @@ export const DashboardPage: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по номеру или названию дела..."
+            placeholder="Поиск по номеру или названию инцидента..."
             style={{ width: '100%' }}
           />
         </div>
@@ -246,7 +246,7 @@ export const DashboardPage: React.FC = () => {
           >
             <div style={{ fontSize: 32, marginBottom: 12 }}>📂</div>
             <p style={{ fontSize: 15, marginBottom: 8 }}>
-              {cases.length === 0 ? 'Дел не найдено' : 'Нет дел по заданному фильтру'}
+              {cases.length === 0 ? 'Инцидентов не найдено' : 'Нет инцидентов по заданному фильтру'}
             </p>
             {cases.length === 0 && canCreate && (
               <Button
@@ -255,7 +255,7 @@ export const DashboardPage: React.FC = () => {
                 onClick={() => setShowModal(true)}
                 style={{ marginTop: 8 }}
               >
-                Создать первое дело
+                Создать первый инцидент
               </Button>
             )}
           </div>

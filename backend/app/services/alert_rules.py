@@ -113,6 +113,9 @@ async def _apply(
 ) -> None:
     if rule.action == AlertRuleAction.suppress:
         alert.status = AlertStatus.dismissed
+    elif rule.action == AlertRuleAction.assign_tag:
+        if rule.tag_value and rule.tag_value not in alert.tags:
+            alert.tags = [*alert.tags, rule.tag_value]
     elif rule.target_case_id is not None:
         await _escalate_to_existing_case(db, alert, rule.target_case_id, actor_user_id)
     else:

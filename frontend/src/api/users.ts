@@ -48,6 +48,11 @@ export async function deactivateUser(id: string): Promise<void> {
   await apiClient.delete(`/users/${id}`)
 }
 
+export async function activateUser(id: string): Promise<User> {
+  const response = await apiClient.post<User>(`/users/${id}/activate`)
+  return response.data
+}
+
 export async function deleteUserPermanently(id: string): Promise<void> {
   await apiClient.delete(`/users/${id}/permanent`)
 }

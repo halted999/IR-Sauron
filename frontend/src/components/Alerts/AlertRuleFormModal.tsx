@@ -33,6 +33,7 @@ const DEFAULT_FORM = {
   action: 'suppress' as AlertRuleAction,
   targetMode: 'new' as 'new' | 'existing',
   targetCaseId: '',
+  tagValue: '',
 }
 
 export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
@@ -135,7 +136,11 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
       return
     }
     if (form.action === 'escalate' && form.targetMode === 'existing' && !form.targetCaseId) {
-      setError('Выберите дело')
+      setError('Выберите инцидент')
+      return
+    }
+    if (form.action === 'assign_tag' && !form.tagValue.trim()) {
+      setError('Укажите значение тега')
       return
     }
 
@@ -150,6 +155,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
       action: form.action,
       target_case_id:
         form.action === 'escalate' && form.targetMode === 'existing' ? form.targetCaseId : undefined,
+      tag_value: form.action === 'assign_tag' ? form.tagValue.trim() : undefined,
     }
 
     setIsSaving(true)
@@ -320,9 +326,29 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
               onChange={() => setField('action', 'escalate')}
               style={{ width: 'auto' }}
             />
-            <span style={{ fontSize: 13 }}>Эскалировать в дело</span>
+            <span style={{ fontSize: 13 }}>Эскалировать в инцидент</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              checked={form.action === 'assign_tag'}
+              onChange={() => setField('action', 'assign_tag')}
+              style={{ width: 'auto' }}
+            />
+            <span style={{ fontSize: 13 }}>Назначить тег</span>
           </label>
         </div>
+
+        {form.action === 'assign_tag' && (
+          <div style={{ paddingLeft: 4 }}>
+            <input
+              type="text"
+              value={form.tagValue}
+              onChange={(e) => setField('tagValue', e.target.value)}
+              placeholder="Значение тега"
+            />
+          </div>
+        )}
 
         {form.action === 'escalate' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
@@ -334,7 +360,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
                   onChange={() => setField('targetMode', 'new')}
                   style={{ width: 'auto' }}
                 />
-                <span style={{ fontSize: 13 }}>В новое дело (на каждое совпадение)</span>
+                <span style={{ fontSize: 13 }}>В новый инцидент (на каждое совпадение)</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <input
@@ -343,12 +369,12 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
                   onChange={() => setField('targetMode', 'existing')}
                   style={{ width: 'auto' }}
                 />
-                <span style={{ fontSize: 13 }}>В существующее дело</span>
+                <span style={{ fontSize: 13 }}>В существующий инцидент</span>
               </label>
             </div>
             {form.targetMode === 'existing' && (
               <select value={form.targetCaseId} onChange={(e) => setField('targetCaseId', e.target.value)}>
-                <option value="">Выберите дело…</option>
+                <option value="">Выберите инцидент…</option>
                 {cases.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.title}

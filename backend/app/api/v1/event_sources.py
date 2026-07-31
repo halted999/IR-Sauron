@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import log_action
 from app.core.crypto import decrypt_secret, encrypt_secret
-from app.core.rbac import require_admin
+from app.core.rbac import require_manage_event_sources
 from app.database import get_db
 from app.models import EventSource, EventSourceType, User
 from app.schemas import (
@@ -61,7 +61,7 @@ def _build_client(source: EventSource, secret: str | None):
 @router.get("", response_model=List[EventSourceResponse])
 async def list_event_sources(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_event_sources)],
 ) -> List[EventSourceResponse]:
     result = await db.execute(select(EventSource).order_by(EventSource.name))
     return [_serialize(s) for s in result.scalars().all()]
@@ -74,7 +74,7 @@ async def create_event_source(
     payload: EventSourceCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceResponse:
     source = EventSource(
         name=payload.name,
@@ -113,7 +113,7 @@ async def create_event_source(
 async def get_event_source(
     source_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceResponse:
     return _serialize(await _get_source_or_404(source_id, db))
 
@@ -126,7 +126,7 @@ async def update_event_source(
     payload: EventSourceUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceResponse:
     source = await _get_source_or_404(source_id, db)
 
@@ -159,7 +159,7 @@ async def delete_event_source(
     source_id: uuid.UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_manage_event_sources)],
 ) -> None:
     source = await _get_source_or_404(source_id, db)
 
@@ -184,7 +184,7 @@ async def delete_event_source(
 async def test_event_source_connection(
     source_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceTestResult:
     source = await _get_source_or_404(source_id, db)
     secret = decrypt_secret(source.auth_secret_encrypted) if source.auth_secret_encrypted else None
@@ -199,7 +199,7 @@ async def test_event_source_connection(
 async def sync_event_source_now(
     source_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceSyncResult:
     source = await _get_source_or_404(source_id, db)
     return await sync_source(db, source)

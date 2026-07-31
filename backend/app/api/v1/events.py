@@ -399,6 +399,9 @@ async def create_event_link(
         target_event_id=payload.target_event_id,
         link_type=payload.link_type,
         description=payload.description,
+        action_type=payload.action_type,
+        event_ts=payload.event_ts,
+        mitre_technique=payload.mitre_technique,
     )
     db.add(link)
 

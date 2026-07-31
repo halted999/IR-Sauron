@@ -1,21 +1,31 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import type { Event, EventLink, ActionType, CreateEventData } from '../../types'
+import type { Event, EventLink, ActionType } from '../../types'
 import { ACTION_TYPE_LABELS } from '../../types'
 import { createEventLink, deleteEventLink } from '../../api/events'
 import { useCaseStore } from '../../store/case'
 import { useToastStore } from '../../store/toast'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
-import { ActionCardModal } from './ActionCardModal'
 
 interface EventGraphProps {
   events: Event[]
   branchId: string
   onEventClick: (event: Event) => void
-  onSaveAction: (data: CreateEventData) => Promise<void>
   selectedEventId?: string
+}
+
+const LINK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function todayDateStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function nowTimeStr(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const NODE_W = 190
@@ -52,7 +62,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   events,
   branchId,
   onEventClick,
-  onSaveAction,
   selectedEventId,
 }) => {
   const toast = useToastStore()
@@ -63,7 +72,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState<Position>({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
-  const [showActionModal, setShowActionModal] = useState(false)
 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [linkingFromId, setLinkingFromId] = useState<string | null>(null)
@@ -72,6 +80,10 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   const [pendingLink, setPendingLink] = useState<{ sourceId: string; targetId: string } | null>(null)
   const [linkTypeInput, setLinkTypeInput] = useState('')
   const [linkDescInput, setLinkDescInput] = useState('')
+  const [linkActionType, setLinkActionType] = useState<ActionType>('network_connection')
+  const [linkDate, setLinkDate] = useState('')
+  const [linkTime, setLinkTime] = useState('')
+  const [linkTechnique, setLinkTechnique] = useState('')
   const [isSavingLink, setIsSavingLink] = useState(false)
 
   const dragMoved = useRef(false)
@@ -197,6 +209,10 @@ export const EventGraph: React.FC<EventGraphProps> = ({
         setPendingLink({ sourceId: linkingFromId, targetId: event.id })
         setLinkTypeInput('')
         setLinkDescInput('')
+        setLinkActionType('network_connection')
+        setLinkDate(todayDateStr())
+        setLinkTime(nowTimeStr())
+        setLinkTechnique('')
       }
       setLinkingFromId(null)
       return
@@ -218,10 +234,17 @@ export const EventGraph: React.FC<EventGraphProps> = ({
     if (!pendingLink || !linkTypeInput.trim()) return
     setIsSavingLink(true)
     try {
+      const event_ts =
+        linkDate && LINK_TIME_PATTERN.test(linkTime)
+          ? new Date(`${linkDate}T${linkTime}:00Z`).toISOString()
+          : undefined
       await createEventLink(pendingLink.sourceId, {
         target_event_id: pendingLink.targetId,
         link_type: linkTypeInput.trim(),
         description: linkDescInput.trim() || undefined,
+        action_type: linkActionType,
+        event_ts,
+        mitre_technique: linkTechnique.trim() || undefined,
       })
       toast.success('Связь добавлена')
       setPendingLink(null)
@@ -289,12 +312,6 @@ export const EventGraph: React.FC<EventGraphProps> = ({
             Выберите второе действие для связи, или кликните по пустому месту, чтобы отменить
           </span>
         )}
-
-        <div style={{ marginLeft: 'auto' }}>
-          <Button variant="primary" size="sm" onClick={() => setShowActionModal(true)}>
-            + Добавить факт
-          </Button>
-        </div>
       </div>
 
       {/* Canvas */}
@@ -543,20 +560,13 @@ export const EventGraph: React.FC<EventGraphProps> = ({
         </div>
       )}
 
-      {/* New action modal */}
-      <ActionCardModal
-        isOpen={showActionModal}
-        onClose={() => setShowActionModal(false)}
-        onSave={onSaveAction}
-        defaultBranchId={branchId}
-      />
-
-      {/* New link type/description modal */}
+      {/* Связь между действиями — тип связи + описательные поля перехода
+          (перенесены из бывшей отдельной формы «Добавить факт») */}
       <Modal
         isOpen={!!pendingLink}
         onClose={() => setPendingLink(null)}
         title="Новая связь между действиями"
-        width={420}
+        width={480}
         footer={
           <>
             <Button variant="ghost" onClick={() => setPendingLink(null)}>
@@ -585,6 +595,56 @@ export const EventGraph: React.FC<EventGraphProps> = ({
               autoFocus
             />
           </div>
+
+          <div>
+            <label htmlFor="link-action-type">Тип события</label>
+            <select
+              id="link-action-type"
+              value={linkActionType}
+              onChange={(e) => setLinkActionType(e.target.value as ActionType)}
+            >
+              {Object.entries(ACTION_TYPE_LABELS).map(([val, label]) => (
+                <option key={val} value={val}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label htmlFor="link-date">Дата</label>
+              <input
+                id="link-date"
+                type="date"
+                value={linkDate}
+                onChange={(e) => setLinkDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="link-time">Время (24ч)</label>
+              <input
+                id="link-time"
+                type="text"
+                value={linkTime}
+                onChange={(e) => setLinkTime(e.target.value)}
+                placeholder="ЧЧ:ММ"
+                maxLength={5}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="link-technique">Техника</label>
+            <input
+              id="link-technique"
+              type="text"
+              value={linkTechnique}
+              onChange={(e) => setLinkTechnique(e.target.value)}
+              placeholder="Например, T1071"
+            />
+          </div>
+
           <div>
             <label htmlFor="link-desc">Описание</label>
             <textarea

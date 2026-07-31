@@ -17,6 +17,7 @@ import { EventModal } from '../components/Events/EventModal'
 import { EventDetail } from '../components/Events/EventDetail'
 import { IOCPanel } from '../components/Cases/IOCPanel'
 import { CaseDescriptionPanel } from '../components/Cases/CaseDescriptionPanel'
+import { CaseReportPanel } from '../components/Cases/CaseReportPanel'
 import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -28,7 +29,7 @@ import {
   CASE_STATUS_LABELS, VERIFICATION_STATUS_LABELS, getCaseStatusLabel, getSauronEyeVariant,
 } from '../types'
 
-type ActiveTab = 'description' | 'table' | 'graph' | 'iocs' | 'alerts'
+type ActiveTab = 'description' | 'table' | 'graph' | 'iocs' | 'alerts' | 'report'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
@@ -137,7 +138,7 @@ export const CasePage: React.FC = () => {
     if (!caseId) return
     clearCaseData()
     Promise.all([fetchCase(caseId), fetchBranches(caseId), fetchIOCs(caseId)]).catch(() => {
-      toast.error('Ошибка загрузки данных дела')
+      toast.error('Ошибка загрузки данных инцидента')
     })
 
     return () => {
@@ -188,7 +189,7 @@ export const CasePage: React.FC = () => {
     try {
       const updated = await updateCase(currentCase.id, { status })
       setCurrentCase(updated)
-      toast.success('Статус дела обновлён')
+      toast.success('Статус инцидента обновлён')
     } catch {
       toast.error('Ошибка обновления статуса')
     }
@@ -210,7 +211,7 @@ export const CasePage: React.FC = () => {
     try {
       const updated = await updateCase(currentCase.id, { title })
       setCurrentCase(updated)
-      toast.success('Название дела обновлено')
+      toast.success('Название инцидента обновлено')
     } catch {
       toast.error('Ошибка обновления названия')
     } finally {
@@ -276,7 +277,7 @@ export const CasePage: React.FC = () => {
     return (
       <AppLayout>
         <div style={{ padding: 40, textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>Дело не найдено</p>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>Инцидент не найден</p>
           <Button variant="secondary" onClick={() => navigate('/dashboard')}>
             Вернуться к списку
           </Button>
@@ -316,7 +317,7 @@ export const CasePage: React.FC = () => {
             style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Link to="/dashboard" style={{ color: 'var(--accent)' }}>
-              Дела
+              Инциденты
             </Link>
             <span>/</span>
             <span>{currentCase.id.slice(0, 8)}</span>
@@ -496,6 +497,7 @@ export const CasePage: React.FC = () => {
                 { key: 'graph', label: 'Граф' },
                 { key: 'iocs', label: `IOC (${iocs.length})` },
                 { key: 'alerts', label: 'Алерты' },
+                { key: 'report', label: 'Отчёт' },
               ] as { key: ActiveTab; label: string }[]
             ).map(({ key, label }) => (
               <button
@@ -545,7 +547,6 @@ export const CasePage: React.FC = () => {
                 events={events}
                 branchId={currentBranch.id}
                 onEventClick={handleEventClick}
-                onSaveAction={handleSaveEvent}
                 selectedEventId={selectedEvent?.id}
               />
             )}
@@ -553,6 +554,15 @@ export const CasePage: React.FC = () => {
             {activeTab === 'iocs' && <IOCPanel iocs={iocs} caseId={currentCase.id} />}
 
             {activeTab === 'alerts' && <CaseAlertsPanel caseId={currentCase.id} />}
+
+            {activeTab === 'report' && (
+              <CaseReportPanel
+                currentCase={currentCase}
+                iocs={iocs}
+                canEdit={canEdit}
+                onUpdate={setCurrentCase}
+              />
+            )}
           </div>
 
           {/* Right panel: event detail */}

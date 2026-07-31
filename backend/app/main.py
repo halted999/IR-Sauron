@@ -4,13 +4,15 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator
 
-from fastapi import Depends, FastAPI, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.auth import get_password_hash, verify_token
+from app.core.maintenance import get_last_restore_error, get_maintenance_reason, get_restore_progress
 from app.database import AsyncSessionLocal, Base, engine, get_db
 from app.models import User, UserRole  # noqa: F401 — triggers model registration
 
@@ -18,7 +20,7 @@ from app.models import User, UserRole  # noqa: F401 — triggers model registrat
 from app.models import (  # noqa: F401
     Case, CaseParticipant, Branch, Event, EventVersion,
     EventLink, IOC, EventIOC, Artifact, Comment, CommentHistory, AuditLog, Alert,
-    AppSettings, EventSource, AlertRule,
+    AppSettings, EventSource, AlertRule, RolePermission,
 )
 
 from app.api.v1 import (
@@ -58,13 +60,16 @@ async def _create_enum_types_if_missing(conn) -> None:
         "alert_status": ["new", "triaged", "escalated", "dismissed"],
         "verification_status": ["in_progress", "confirmed", "rejected"],
         "event_source_type": ["elastic", "thehive"],
-        "alert_rule_action": ["suppress", "escalate"],
+        "alert_rule_action": ["suppress", "escalate", "assign_tag"],
     }
     for name, values in enums.items():
         quoted = ", ".join(f"'{v}'" for v in values)
         await conn.execute(
             text(f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({quoted}); EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
         )
+    # Enum values added after the type already existed on a deployed database
+    # (CREATE TYPE above is a no-op there) must be added explicitly.
+    await conn.execute(text("ALTER TYPE alert_rule_action ADD VALUE IF NOT EXISTS 'assign_tag'"))
 
 
 async def _add_missing_columns_if_needed(conn) -> None:
@@ -131,6 +136,25 @@ async def _add_missing_columns_if_needed(conn) -> None:
     await conn.execute(
         text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_index VARCHAR(255) NULL")
     )
+    await conn.execute(
+        text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb")
+    )
+    await conn.execute(
+        text("ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS tag_value VARCHAR(100) NULL")
+    )
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS root_cause TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS impact_summary TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS attribution TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS report_notes TEXT NULL"))
+    await conn.execute(
+        text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS action_type action_type NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS event_ts TIMESTAMPTZ NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS mitre_technique VARCHAR(255) NULL")
+    )
 
 
 async def _ensure_admin_user() -> None:
@@ -162,6 +186,25 @@ async def _ensure_admin_user() -> None:
         await session.commit()
 
 
+async def _seed_role_permissions() -> None:
+    """
+    Seed role_permissions with the defaults that reproduce the previously
+    hardcoded RBAC checks (see app.core.rbac.DEFAULT_ROLE_PERMISSIONS) — only
+    for rows that don't exist yet, so an admin's edits are never overwritten
+    on restart.
+    """
+    from app.core.rbac import DEFAULT_ROLE_PERMISSIONS
+    from app.models import RolePermission
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(RolePermission))
+        existing = {(rp.role, rp.permission) for rp in result.scalars().all()}
+        for (role, permission), allowed in DEFAULT_ROLE_PERMISSIONS.items():
+            if (role, permission) not in existing:
+                session.add(RolePermission(role=role, permission=permission, allowed=allowed))
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
@@ -171,6 +214,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns_if_needed(conn)
     await _ensure_admin_user()
+    await _seed_role_permissions()
 
     # Ensure MinIO bucket exists (run sync method off the event loop)
     try:
@@ -218,6 +262,28 @@ app.add_middleware(
     expose_headers=["X-Total-Count"],
 )
 
+# ── Maintenance mode ──────────────────────────────────────────────────────────
+# Set by the DB restore endpoint (see app.api.v1.admin) for the duration of a
+# pg_restore run, since --clean drops and recreates every table — any other
+# request touching the DB concurrently would otherwise see broken/missing
+# data. Backed by Redis (not an in-process flag) because uvicorn runs several
+# worker processes that don't share memory.
+
+_MAINTENANCE_EXEMPT_PREFIXES = ("/v1/admin/restore", "/v1/ping", "/health")
+
+
+@app.middleware("http")
+async def maintenance_mode_middleware(request: Request, call_next):
+    if not any(request.url.path.startswith(p) for p in _MAINTENANCE_EXEMPT_PREFIXES):
+        reason = await get_maintenance_reason()
+        if reason:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "maintenance", "maintenance": True, "reason": reason},
+            )
+    return await call_next(request)
+
+
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(auth.router, prefix="/v1")
@@ -248,6 +314,23 @@ async def health_check(
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "error",
+    }
+
+
+@app.get("/v1/ping", tags=["health"])
+async def ping() -> dict:
+    """Lightweight, unauthenticated, maintenance-mode-exempt endpoint — used
+    by the frontend to detect when a database restore has finished, and to
+    poll its progress while it runs."""
+    reason = await get_maintenance_reason()
+    progress = await get_restore_progress()
+    last_error = await get_last_restore_error()
+    return {
+        "status": "ok",
+        "maintenance": bool(reason),
+        "reason": reason,
+        "progress": {"processed": progress[0], "total": progress[1]} if progress else None,
+        "last_error": last_error,
     }
 
 

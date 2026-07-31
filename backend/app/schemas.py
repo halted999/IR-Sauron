@@ -122,6 +122,10 @@ class CaseUpdate(BaseModel):
     incident_started_at: Optional[datetime] = None
     incident_contained_at: Optional[datetime] = None
     incident_closed_at: Optional[datetime] = None
+    root_cause: Optional[str] = None
+    impact_summary: Optional[str] = None
+    attribution: Optional[str] = None
+    report_notes: Optional[str] = None
 
 
 class CaseResponse(BaseModel):
@@ -141,6 +145,10 @@ class CaseResponse(BaseModel):
     incident_started_at: Optional[datetime]
     incident_contained_at: Optional[datetime]
     incident_closed_at: Optional[datetime]
+    root_cause: Optional[str] = None
+    impact_summary: Optional[str] = None
+    attribution: Optional[str] = None
+    report_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     participants: List[CaseParticipantResponse] = []
@@ -176,6 +184,7 @@ class AlertUpdate(BaseModel):
     severity: Optional[CaseSeverity] = None
     source: Optional[str] = Field(None, max_length=255)
     status: Optional[AlertStatus] = None
+    tags: Optional[List[str]] = None
 
 
 class AlertEscalateRequest(BaseModel):
@@ -211,6 +220,7 @@ class AlertResponse(BaseModel):
     external_id: Optional[str]
     external_url: Optional[str]
     source_index: Optional[str]
+    tags: List[str]
     is_deleted: bool
     deleted_at: Optional[datetime]
     assigned_to: Optional[uuid.UUID]
@@ -308,6 +318,7 @@ class AlertRuleCreate(BaseModel):
     match_description_contains: Optional[str] = Field(None, max_length=1000)
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID] = None
+    tag_value: Optional[str] = Field(None, max_length=100)
     is_enabled: bool = True
 
     @model_validator(mode="after")
@@ -322,6 +333,13 @@ class AlertRuleCreate(BaseModel):
             )
         if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
             raise ValueError("target_case_id недопустим для действия 'suppress'")
+        if self.action == AlertRuleAction.assign_tag:
+            if self.target_case_id is not None:
+                raise ValueError("target_case_id недопустим для действия 'assign_tag'")
+            if not self.tag_value or not self.tag_value.strip():
+                raise ValueError("Укажите значение тега для действия 'assign_tag'")
+        elif self.tag_value is not None:
+            raise ValueError("tag_value допустим только для действия 'assign_tag'")
         return self
 
 
@@ -333,6 +351,7 @@ class AlertRuleUpdate(BaseModel):
     match_description_contains: Optional[str] = Field(None, max_length=1000)
     action: Optional[AlertRuleAction] = None
     target_case_id: Optional[uuid.UUID] = None
+    tag_value: Optional[str] = Field(None, max_length=100)
     is_enabled: Optional[bool] = None
 
 
@@ -347,6 +366,7 @@ class AlertRuleResponse(BaseModel):
     match_description_contains: Optional[str]
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID]
+    tag_value: Optional[str]
     is_enabled: bool
     applied_count: int
     last_applied_at: Optional[datetime]
@@ -364,6 +384,7 @@ class AlertRuleFromSelectionRequest(BaseModel):
     match_description_contains: Optional[str] = Field(None, max_length=1000)
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID] = None
+    tag_value: Optional[str] = Field(None, max_length=100)
 
     @model_validator(mode="after")
     def _validate(self) -> "AlertRuleFromSelectionRequest":
@@ -377,6 +398,13 @@ class AlertRuleFromSelectionRequest(BaseModel):
             )
         if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
             raise ValueError("target_case_id недопустим для действия 'suppress'")
+        if self.action == AlertRuleAction.assign_tag:
+            if self.target_case_id is not None:
+                raise ValueError("target_case_id недопустим для действия 'assign_tag'")
+            if not self.tag_value or not self.tag_value.strip():
+                raise ValueError("Укажите значение тега для действия 'assign_tag'")
+        elif self.tag_value is not None:
+            raise ValueError("tag_value допустим только для действия 'assign_tag'")
         return self
 
 
@@ -498,6 +526,9 @@ class EventLinkResponse(BaseModel):
     target_event_id: uuid.UUID
     link_type: str
     description: Optional[str]
+    action_type: Optional[ActionType]
+    event_ts: Optional[datetime]
+    mitre_technique: Optional[str]
     created_at: datetime
 
 
@@ -565,6 +596,9 @@ class EventLinkCreate(BaseModel):
     target_event_id: uuid.UUID
     link_type: str = Field(..., max_length=100)
     description: Optional[str] = None
+    action_type: Optional[ActionType] = None
+    event_ts: Optional[datetime] = None
+    mitre_technique: Optional[str] = Field(None, max_length=255)
 
 
 # ─── Artifact ─────────────────────────────────────────────────────────────────
@@ -701,6 +735,28 @@ class AppSettingsResponse(BaseModel):
 
 class BackupRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=255)
+
+
+class RestoreRequest(BaseModel):
+    password: str = Field(..., min_length=8, max_length=255)
+    confirm: str
+
+
+# ─── Role permission matrix ───────────────────────────────────────────────────
+
+class RolePermissionItem(BaseModel):
+    role: UserRole
+    permission: str
+    allowed: bool
+
+
+class RolePermissionsResponse(BaseModel):
+    permissions: List[RolePermissionItem]
+    labels: Dict[str, str]
+
+
+class UpdateRolePermissionsRequest(BaseModel):
+    permissions: List[RolePermissionItem]
 
 
 # ─── Event Sources (Elastic / TheHive) ────────────────────────────────────────

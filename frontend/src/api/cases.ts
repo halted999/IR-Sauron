@@ -40,6 +40,7 @@ export interface UpdateCaseData extends Partial<CreateCaseData> {
   root_cause?: string
   impact_summary?: string
   attribution?: string
+  report_notes?: string
   incident_started_at?: string | null
   incident_contained_at?: string | null
   incident_closed_at?: string | null

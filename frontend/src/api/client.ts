@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import { useMaintenanceStore } from '../store/maintenance'
 
 const BASE_URL = import.meta.env.VITE_API_BASE || '/api/v1'
 
@@ -46,11 +47,17 @@ function processQueue(error: unknown, token: string | null = null): void {
   failedQueue = []
 }
 
-// Response interceptor: handle 401
+// Response interceptor: handle 401 + maintenance mode
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+
+    const data = error.response?.data as { maintenance?: boolean; reason?: string } | undefined
+    if (error.response?.status === 503 && data?.maintenance) {
+      useMaintenanceStore.getState().setActive(true, data.reason ?? '')
+      return Promise.reject(error)
+    }
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       if (isRefreshing) {

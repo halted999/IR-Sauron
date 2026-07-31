@@ -94,7 +94,7 @@ export const CaseModal: React.FC<CaseModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={caseData ? 'Редактировать дело' : 'Создать дело'}
+      title={caseData ? 'Редактировать инцидент' : 'Создать инцидент'}
       width={580}
       footer={
         <>
@@ -110,7 +110,7 @@ export const CaseModal: React.FC<CaseModalProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* Title */}
         <div>
-          <label htmlFor="case-title">Название дела *</label>
+          <label htmlFor="case-title">Название инцидента *</label>
           <input
             id="case-title"
             type="text"

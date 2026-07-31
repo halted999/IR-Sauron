@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_active_user, get_password_hash
-from app.core.rbac import require_admin, require_write_access
+from app.core.rbac import require_manage_users, require_write_access
 from app.database import get_db
 from app.models import User, UserRole
 from app.schemas import UserCreate, UserResponse, UserShort, UserUpdate
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("", response_model=List[UserResponse])
 async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_users)],
     skip: int = 0,
     limit: int = 100,
 ) -> List[User]:
@@ -31,7 +31,7 @@ async def list_users(
 async def create_user(
     payload: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_users)],
 ) -> User:
     # Ensure uniqueness
     existing = await db.execute(
@@ -127,7 +127,7 @@ async def update_user(
 async def deactivate_user(
     user_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_manage_users)],
 ) -> None:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -138,11 +138,28 @@ async def deactivate_user(
     await db.flush()
 
 
+@router.post("/{user_id}/activate", response_model=UserResponse)
+async def activate_user(
+    user_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_manage_users)],
+) -> User:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.is_active = True
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
 @router.delete("/{user_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_permanently(
     user_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_manage_users)],
 ) -> None:
     if user_id == current_user.id:
         raise HTTPException(

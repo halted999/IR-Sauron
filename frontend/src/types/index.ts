@@ -51,6 +51,7 @@ export interface Alert {
   status: AlertStatus
   case_id?: string
   source_index?: string
+  tags: string[]
   is_deleted: boolean
   deleted_at?: string
   assigned_to?: string
@@ -123,6 +124,7 @@ export interface Case {
   root_cause?: string
   impact_summary?: string
   attribution?: string
+  report_notes?: string
   created_at: string
   updated_at: string
   participants?: CaseParticipant[]
@@ -156,6 +158,9 @@ export interface EventLink {
   target_event_id: string
   link_type: string
   description?: string
+  action_type?: ActionType
+  event_ts?: string
+  mitre_technique?: string
   created_at: string
 }
 
@@ -246,6 +251,9 @@ export interface CreateEventLinkData {
   target_event_id: string
   link_type: string
   description?: string
+  action_type?: ActionType
+  event_ts?: string
+  mitre_technique?: string
 }
 
 export interface CreateCaseData {
@@ -376,7 +384,7 @@ export const IOC_TYPE_LABELS: Record<string, string> = {
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Администратор',
   ir_lead: 'Руководитель IR',
-  investigator: 'Следователь',
+  investigator: 'Аналитик',
   observer: 'Наблюдатель',
   external_contractor: 'Внешний подрядчик',
 }

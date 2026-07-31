@@ -91,7 +91,7 @@ export const CaseDescriptionPanel: React.FC<CaseDescriptionPanelProps> = ({
         attribution: form.attribution.trim(),
       })
       onUpdate(updated)
-      toast.success('Описание дела обновлено')
+      toast.success('Описание инцидента обновлено')
       setIsEditing(false)
     } catch {
       toast.error('Ошибка обновления описания')

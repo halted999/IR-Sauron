@@ -95,8 +95,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           }}
         >
         {/* Logo */}
-        <Link
-          to="/dashboard"
+        <div
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -104,7 +103,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             color: 'var(--text-primary)',
             fontWeight: 700,
             fontSize: 15,
-            textDecoration: 'none',
           }}
         >
           <svg
@@ -135,7 +133,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             <ellipse cx="12" cy="12" rx="1.7" ry="6.2" fill="#150402" />
           </svg>
           IR-Sauron
-        </Link>
+        </div>
 
         {/* Nav */}
         <nav style={{ display: 'flex', gap: 4 }}>
@@ -143,7 +141,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             Алерты
           </NavLink>
           <NavLink to="/dashboard" style={navLinkStyle}>
-            Дела
+            Инциденты
           </NavLink>
           <NavLink to="/statistics" style={navLinkStyle}>
             Статистика

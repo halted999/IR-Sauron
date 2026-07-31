@@ -27,7 +27,8 @@ function describeRule(rule: AlertRule): string {
 
 function describeAction(rule: AlertRule): string {
   if (rule.action === 'suppress') return 'Подавлять'
-  return rule.target_case_id ? 'Эскалировать → существующее дело' : 'Эскалировать → новое дело'
+  if (rule.action === 'assign_tag') return `Назначить тег «${rule.tag_value}»`
+  return rule.target_case_id ? 'Эскалировать → существующий инцидент' : 'Эскалировать → новый инцидент'
 }
 
 export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClose }) => {

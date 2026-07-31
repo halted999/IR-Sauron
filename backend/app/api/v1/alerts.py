@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import log_action
 from app.core.auth import get_current_active_user
-from app.core.rbac import require_admin, require_write_access
+from app.core.rbac import require_purge_alerts, require_write_access
 from app.database import get_db
 from app.models import (
     Alert, AlertStatus, Branch, BranchStatus, Case, CaseParticipant,
@@ -476,7 +476,7 @@ async def purge_alerts_bulk(
     payload: AlertIdsRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_purge_alerts)],
 ) -> None:
     result = await db.execute(
         select(Alert).where(Alert.id.in_(payload.alert_ids), Alert.is_deleted.is_(True))

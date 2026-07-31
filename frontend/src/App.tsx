@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/auth'
+import { useMaintenanceStore } from './store/maintenance'
+import { MaintenancePage } from './components/Maintenance/MaintenancePage'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { CasePage } from './pages/CasePage'
@@ -29,10 +31,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const App: React.FC = () => {
   const { restoreSession, isLoading, accessToken } = useAuthStore()
+  const isMaintenanceActive = useMaintenanceStore((s) => s.isActive)
 
   useEffect(() => {
     restoreSession()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isMaintenanceActive) {
+    return <MaintenancePage />
+  }
 
   if (isLoading) {
     return <FullPageSpinner />

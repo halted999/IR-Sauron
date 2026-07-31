@@ -113,6 +113,8 @@ export const AlertDetailPage: React.FC = () => {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
   const [showRuleModal, setShowRuleModal] = useState(false)
+  const [tagInput, setTagInput] = useState('')
+  const [isSavingTags, setIsSavingTags] = useState(false)
 
   useEffect(() => {
     if (!alertId) return
@@ -145,6 +147,37 @@ export const AlertDetailPage: React.FC = () => {
     updateAlertInStore(updated)
   }
 
+  const handleAddTag = async () => {
+    const value = tagInput.trim()
+    if (!alert || !value || alert.tags.includes(value)) {
+      setTagInput('')
+      return
+    }
+    setIsSavingTags(true)
+    try {
+      const updated = await updateAlert(alert.id, { tags: [...alert.tags, value] })
+      applyUpdate(updated)
+      setTagInput('')
+    } catch {
+      toast.error('Ошибка добавления тега')
+    } finally {
+      setIsSavingTags(false)
+    }
+  }
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!alert) return
+    setIsSavingTags(true)
+    try {
+      const updated = await updateAlert(alert.id, { tags: alert.tags.filter((t) => t !== tag) })
+      applyUpdate(updated)
+    } catch {
+      toast.error('Ошибка удаления тега')
+    } finally {
+      setIsSavingTags(false)
+    }
+  }
+
   const handleDismiss = async () => {
     if (!alert) return
     if (!confirm(`Отклонить алерт "${alert.title}"?`)) return
@@ -162,12 +195,12 @@ export const AlertDetailPage: React.FC = () => {
 
   const handleEscalate = async () => {
     if (!alert) return
-    if (!confirm(`Эскалировать алерт "${alert.title}" в новое дело?`)) return
+    if (!confirm(`Эскалировать алерт "${alert.title}" в новый инцидент?`)) return
     setIsActing(true)
     try {
       const newCase = await escalateAlert(alert.id, {})
       applyUpdate({ ...alert, status: 'escalated', case_id: newCase.id })
-      toast.success(`Дело «${newCase.title}» создано из алерта`)
+      toast.success(`Инцидент «${newCase.title}» создан из алерта`)
       navigate(`/cases/${newCase.id}`)
     } catch {
       toast.error('Ошибка эскалации алерта')
@@ -309,7 +342,7 @@ export const AlertDetailPage: React.FC = () => {
                 {alert.status === 'escalated' ? (
                   alert.case_id && (
                     <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
-                      Открыть дело
+                      Открыть инцидент
                     </Button>
                   )
                 ) : alert.status === 'dismissed' ? null : (
@@ -420,6 +453,71 @@ export const AlertDetailPage: React.FC = () => {
               '—'
             )}
           </Field>
+          <Field label="Тэги">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {alert.tags.length > 0 ? (
+                alert.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 4px 2px 10px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      background: 'rgba(88,166,255,0.15)',
+                      color: 'var(--accent)',
+                      border: '1px solid rgba(88,166,255,0.4)',
+                    }}
+                  >
+                    {tag}
+                    {canWrite && (
+                      <button
+                        onClick={() => handleRemoveTag(tag)}
+                        disabled={isSavingTags}
+                        title="Удалить тег"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          lineHeight: 1,
+                          padding: '2px 4px',
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: 'var(--text-secondary)' }}>—</span>
+              )}
+            </div>
+            {canWrite && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleAddTag()
+                    }
+                  }}
+                  placeholder="Новый тег"
+                  disabled={isSavingTags}
+                  style={{ maxWidth: 220, fontSize: 13 }}
+                />
+                <Button variant="secondary" size="sm" onClick={handleAddTag} isLoading={isSavingTags}>
+                  Добавить
+                </Button>
+              </div>
+            )}
+          </Field>
           {alert.case_id && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span
@@ -431,7 +529,7 @@ export const AlertDetailPage: React.FC = () => {
                   letterSpacing: '0.5px',
                 }}
               >
-                Дело
+                Инцидент
               </span>
               <Link to={`/cases/${alert.case_id}`} style={{ color: '#d29922', fontSize: 14 }}>
                 {alert.case_id.slice(0, 8)}

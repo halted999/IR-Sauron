@@ -46,7 +46,7 @@ export async function createAlert(data: CreateAlertData): Promise<Alert> {
 
 export async function updateAlert(
   id: string,
-  data: Partial<CreateAlertData> & { status?: AlertStatus },
+  data: Partial<CreateAlertData> & { status?: AlertStatus; tags?: string[] },
 ): Promise<Alert> {
   const response = await apiClient.put<Alert>(`/alerts/${id}`, data)
   return response.data
