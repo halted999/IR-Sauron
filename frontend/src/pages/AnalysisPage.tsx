@@ -7,7 +7,7 @@ import { getCorrelationGraph } from '../api/statistics'
 import { useToastStore } from '../store/toast'
 import type { CorrelationGraph as CorrelationGraphData, StatisticsPeriodKey } from '../types'
 
-const PERIOD_ORDER: StatisticsPeriodKey[] = ['day', 'current_week', '7d', 'current_month', '30d']
+const PERIOD_ORDER: StatisticsPeriodKey[] = ['day', 'current_week', '7d', 'current_month', '30d', 'custom']
 const VALID_PERIODS = new Set<string>(PERIOD_ORDER)
 
 const PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
@@ -16,7 +16,7 @@ const PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
   '7d': 'Последние 7 дней',
   current_month: 'Текущий месяц',
   '30d': 'Последние 30 дней',
-  custom: 'Выборочный период',
+  custom: 'Период',
 }
 
 function initialPeriod(searchParams: URLSearchParams): StatisticsPeriodKey {
@@ -30,6 +30,8 @@ export const AnalysisPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [period, setPeriod] = useState<StatisticsPeriodKey>(() => initialPeriod(searchParams))
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [searchInput, setSearchInput] = useState(() => searchParams.get('q') ?? '')
   const [activeQuery, setActiveQuery] = useState<string | null>(() => searchParams.get('q')?.trim() || null)
   const [data, setData] = useState<CorrelationGraphData | null>(null)
@@ -40,9 +42,18 @@ export const AnalysisPage: React.FC = () => {
       setData(null)
       return
     }
+    if (period === 'custom' && (!customStart || !customEnd)) {
+      setData(null)
+      return
+    }
     let cancelled = false
     setIsLoading(true)
-    getCorrelationGraph({ period, q: activeQuery })
+    getCorrelationGraph({
+      period,
+      q: activeQuery,
+      start: period === 'custom' ? `${customStart}T00:00:00` : undefined,
+      end: period === 'custom' ? `${customEnd}T23:59:59` : undefined,
+    })
       .then((res) => {
         if (!cancelled) setData(res)
       })
@@ -56,7 +67,7 @@ export const AnalysisPage: React.FC = () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, activeQuery])
+  }, [period, activeQuery, customStart, customEnd])
 
   const runSearch = () => {
     const trimmed = searchInput.trim()
@@ -132,12 +143,35 @@ export const AnalysisPage: React.FC = () => {
               {PERIOD_LABELS[key]}
             </button>
           ))}
+          {period === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                style={{ width: 150 }}
+              />
+              <span style={{ color: 'var(--text-secondary)' }}>—</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ width: 150 }}
+              />
+            </div>
+          )}
           {data?.truncated && (
             <span style={{ fontSize: 12, color: 'var(--warning, #d29922)' }}>
               Граф слишком большой — показана только часть связей
             </span>
           )}
         </div>
+
+        {activeQuery && period === 'custom' && (!customStart || !customEnd) && (
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: -8, marginBottom: 16 }}>
+            Укажите начало и конец периода
+          </p>
+        )}
 
         <div
           style={{

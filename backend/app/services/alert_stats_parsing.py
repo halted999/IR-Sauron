@@ -45,12 +45,25 @@ def extract_ips(text: Optional[str]) -> List[str]:
     return seen
 
 
+_INTERNAL_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+
+
 def is_internal_ip(ip: str) -> bool:
-    """RFC1918 (and other non-globally-routable) ranges count as internal."""
+    """Only the three RFC1918 private ranges count as internal; everything
+    else — including RFC 5737 documentation/test ranges (192.0.2.0/24,
+    198.51.100.0/24, 203.0.113.0/24) — is external. `ipaddress`'s own
+    `is_global` bundles those documentation ranges in with private space,
+    which mislabeled them as internal here.
+    """
     try:
-        return not ipaddress.ip_address(ip).is_global
+        addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
+    return any(addr in net for net in _INTERNAL_NETWORKS)
 
 
 def extract_urls(text: Optional[str]) -> List[str]:

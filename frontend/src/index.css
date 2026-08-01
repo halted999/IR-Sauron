@@ -237,3 +237,34 @@ code {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Small, theme-independent hover tooltip (fixed colors on purpose, so it
+   reads the same in every theme instead of inheriting a theme's palette). */
+.icon-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+.icon-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #161b22;
+  color: #e6edf3;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 50;
+}
+.icon-tooltip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}

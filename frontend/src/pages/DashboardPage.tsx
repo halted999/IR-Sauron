@@ -43,6 +43,19 @@ const CLASSIFICATION_COLOR: Record<string, string> = {
   '4': 'red',
 }
 
+// Some cases carry a descriptive Russian grade instead of the "1"-"4" level
+// the create form assigns — normalize those for display outside the Sauron
+// theme, where the numeric level is shown instead of the words.
+const CONFIDENTIALITY_TEXT_TO_LEVEL: Record<string, string> = {
+  'Для служебного пользования': '1',
+  'Секретно': '3',
+  'Совершенно секретно': '4',
+}
+
+function confidentialityLevel(label: string): string {
+  return CONFIDENTIALITY_TEXT_TO_LEVEL[label] ?? label
+}
+
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -335,12 +348,14 @@ export const DashboardPage: React.FC = () => {
                             : <SauronEyeIcon variant={iconVariant} />
                           : undefined
                         return (
-                          <Badge
-                            color={STATUS_COLOR[c.status] as 'blue'}
-                            label={iconVariant ? '' : getCaseStatusLabel(c.status, theme)}
-                            size="sm"
-                            icon={icon}
-                          />
+                          <span className="icon-tooltip" data-tooltip={getCaseStatusLabel(c.status, theme)}>
+                            <Badge
+                              color={STATUS_COLOR[c.status] as 'blue'}
+                              label={iconVariant ? '' : getCaseStatusLabel(c.status, theme)}
+                              size="sm"
+                              icon={icon}
+                            />
+                          </span>
                         )
                       })()}
                     </Td>
@@ -354,25 +369,47 @@ export const DashboardPage: React.FC = () => {
                     <Td>
                       {!c.confidentiality_label ? (
                         <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>—</span>
-                      ) : CLASSIFICATION_COLOR[c.confidentiality_label] ? (
-                        <Badge
-                          color={CLASSIFICATION_COLOR[c.confidentiality_label] as 'green'}
-                          label={c.confidentiality_label}
-                          size="sm"
-                        />
+                      ) : theme === 'sauron' ? (
+                        CLASSIFICATION_COLOR[c.confidentiality_label] ? (
+                          <Badge
+                            color={CLASSIFICATION_COLOR[c.confidentiality_label] as 'green'}
+                            label={c.confidentiality_label}
+                            size="sm"
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              background: 'var(--bg-tertiary)',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
+                            {c.confidentiality_label}
+                          </span>
+                        )
                       ) : (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            background: 'var(--bg-tertiary)',
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-secondary)',
-                          }}
-                        >
-                          {c.confidentiality_label}
-                        </span>
+                        (() => {
+                          const level = confidentialityLevel(c.confidentiality_label)
+                          return CLASSIFICATION_COLOR[level] ? (
+                            <Badge color={CLASSIFICATION_COLOR[level] as 'green'} label={level} size="sm" />
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                background: 'var(--bg-tertiary)',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                border: '1px solid var(--border)',
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
+                              {level}
+                            </span>
+                          )
+                        })()
                       )}
                     </Td>
                     <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>

@@ -131,6 +131,15 @@ const HorizontalBarCard: React.FC<{ title: string; headLabel: string; rows: { la
   )
 }
 
+const CountListCard: React.FC<{ title: string; headLabel: string; rows: { label: string; count: number }[] }> = ({
+  title, headLabel, rows,
+}) => (
+  <div style={cardStyle()}>
+    <SectionTitle>{title}</SectionTitle>
+    <CountTable headLabel={headLabel} rows={rows} />
+  </div>
+)
+
 export const StatisticsPage: React.FC = () => {
   const toast = useToastStore()
   const [period, setPeriod] = useState<StatisticsPeriodKey>('day')
@@ -351,10 +360,10 @@ export const StatisticsPage: React.FC = () => {
 
             {/* URL / IP breakdowns */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
-              <HorizontalBarCard title="Топ URL" headLabel="URL" rows={urlRows} />
+              <CountListCard title="Топ URL" headLabel="URL" rows={urlRows} />
               <HorizontalBarCard title="Внешние IP-адреса" headLabel="IP-адрес" rows={extIpRows} />
-              <HorizontalBarCard title="Внутренние IP-адреса" headLabel="IP-адрес" rows={intIpRows} />
-              <HorizontalBarCard title="Учётные записи в алертах" headLabel="Учётная запись" rows={accountFromAlertsRows} />
+              <CountListCard title="Внутренние IP-адреса" headLabel="IP-адрес" rows={intIpRows} />
+              <CountListCard title="Учётные записи в алертах" headLabel="Учётная запись" rows={accountFromAlertsRows} />
             </div>
           </>
         )}

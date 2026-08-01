@@ -461,6 +461,38 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
 
           {/* ─── Колонка 2 ─────────────────────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Свободный текст отчёта */}
+            <div
+              style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: 20,
+              }}
+            >
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Описание инцидента</h3>
+              {isEditing ? (
+                <textarea
+                  value={form.report_notes}
+                  onChange={(e) => setField('report_notes', e.target.value)}
+                  rows={12}
+                  style={{ resize: 'vertical', width: '100%' }}
+                  placeholder="Свободный текст отчёта об инциденте..."
+                />
+              ) : (
+                <div
+                  style={{
+                    fontSize: 14,
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.6,
+                    color: currentCase.report_notes ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {currentCase.report_notes || 'Отчёт ещё не написан.'}
+                </div>
+              )}
+            </div>
+
             {/* Затронутые активы */}
             <ReportSection title="Затронутые активы">
               <TextBlock
@@ -531,66 +563,6 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
               />
             </ReportSection>
 
-            {/* Свободный текст отчёта */}
-            <div
-              style={{
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border)',
-                borderRadius: 12,
-                padding: 20,
-              }}
-            >
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Текст отчёта</h3>
-              {isEditing ? (
-                <textarea
-                  value={form.report_notes}
-                  onChange={(e) => setField('report_notes', e.target.value)}
-                  rows={12}
-                  style={{ resize: 'vertical', width: '100%' }}
-                  placeholder="Свободный текст отчёта об инциденте..."
-                />
-              ) : (
-                <div
-                  style={{
-                    fontSize: 14,
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.6,
-                    color: currentCase.report_notes ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  }}
-                >
-                  {currentCase.report_notes || 'Отчёт ещё не написан.'}
-                </div>
-              )}
-            </div>
-
-            {/* Индикаторы компрометации — из существующей модели IOC инцидента */}
-            <ReportSection title="Индикаторы компрометации (авто)">
-              {iocs.length === 0 ? (
-                <Value>IOC в инциденте не зарегистрированы</Value>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
-                        <th style={thStyle}>Тип</th>
-                        <th style={thStyle}>Значение</th>
-                        <th style={thStyle}>Контекст</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {iocs.map((ioc) => (
-                        <tr key={ioc.id} style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={tdStyle}>{IOC_TYPE_LABELS[ioc.ioc_type] || ioc.ioc_type}</td>
-                          <td style={tdStyle}>{ioc.value}</td>
-                          <td style={tdStyle}>{ioc.context || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </ReportSection>
-
             {/* Приложения и доказательства — файлы, прикреплённые к событиям инцидента */}
             <ReportSection title="Приложения и доказательства (авто)">
               {artifactsList.length === 0 ? (
@@ -656,6 +628,36 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
               />
             </ReportSection>
           </div>
+        </div>
+
+        {/* Индикаторы компрометации — из существующей модели IOC инцидента */}
+        <div style={{ marginTop: 16 }}>
+          <ReportSection title="Индикаторы компрометации (авто)">
+            {iocs.length === 0 ? (
+              <Value>IOC в инциденте не зарегистрированы</Value>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
+                      <th style={thStyle}>Тип</th>
+                      <th style={thStyle}>Значение</th>
+                      <th style={thStyle}>Контекст</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {iocs.map((ioc) => (
+                      <tr key={ioc.id} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={tdStyle}>{IOC_TYPE_LABELS[ioc.ioc_type] || ioc.ioc_type}</td>
+                        <td style={tdStyle}>{ioc.value}</td>
+                        <td style={tdStyle}>{ioc.context || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ReportSection>
         </div>
       </div>
     </div>
