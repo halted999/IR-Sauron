@@ -1,6 +1,6 @@
 import apiClient from './client'
 
-export type EventSourceType = 'elastic' | 'thehive'
+export type EventSourceType = 'elastic' | 'thehive' | 'file_watch' | 'email' | 'json_api'
 
 export interface EventSource {
   id: string

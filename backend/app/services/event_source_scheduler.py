@@ -14,6 +14,9 @@ from app.models import Alert, AlertStatus, CaseSeverity, EventSource, EventSourc
 from app.schemas import EventSourceSyncResult
 from app.services.alert_rules import apply_matching_rules
 from app.services.elastic_client import ElasticClient
+from app.services.email_client import EmailClient
+from app.services.file_watch_client import FileWatchClient
+from app.services.json_api_client import JsonApiClient
 from app.services.thehive_client import TheHiveClient
 
 logger = logging.getLogger(__name__)
@@ -31,6 +34,19 @@ _THEHIVE_SEVERITY = {
 }
 _ELASTIC_SEVERITY_FIELDS = ["event.severity", "rule.severity", "kibana.alert.severity", "severity"]
 _ELASTIC_TITLE_FIELDS = ["rule.name", "kibana.alert.rule.name", "message", "event.action"]
+_TEXT_SEVERITY_ALIASES = {
+    "critical": CaseSeverity.critical, "критический": CaseSeverity.critical,
+    "high": CaseSeverity.high, "высокий": CaseSeverity.high,
+    "medium": CaseSeverity.medium, "средний": CaseSeverity.medium,
+    "low": CaseSeverity.low, "низкий": CaseSeverity.low,
+    "informational": CaseSeverity.informational, "информационный": CaseSeverity.informational,
+}
+
+
+def _severity_from_text(value: Optional[str]) -> CaseSeverity:
+    if not value:
+        return CaseSeverity.medium
+    return _TEXT_SEVERITY_ALIASES.get(value.strip().lower(), CaseSeverity.medium)
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
@@ -109,7 +125,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 await db.flush()
                 await apply_matching_rules(db, alert)
                 new_count += 1
-        else:
+        elif source.source_type == EventSourceType.thehive:
             client = TheHiveClient(source.base_url, secret, source.verify_ssl)
             alerts = await client.fetch_alerts(since)
             for raw in alerts:
@@ -125,6 +141,97 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                     event_source_id=source.id,
                     external_id=str(external_id),
                     external_url=f"{source.base_url}/index.html#!/alert/{external_id}/details",
+                )
+                db.add(alert)
+                await db.flush()
+                await apply_matching_rules(db, alert)
+                new_count += 1
+
+        elif source.source_type == EventSourceType.file_watch:
+            client = FileWatchClient(
+                folder_path=source.base_url,
+                file_mask=config.get("file_mask"),
+                file_format=config.get("file_format"),
+                csv_delimiter=config.get("csv_delimiter"),
+            )
+            records = await client.fetch_records(since)
+            for rec in records:
+                external_id = f"{rec['_file']}:{rec['_row']}:{rec['_mtime']}"
+                if await _alert_exists(db, source.id, external_id):
+                    continue
+                alert = Alert(
+                    title=(rec.get("title") or f"{rec['_file']} #{rec['_row']}")[:500],
+                    description=rec.get("description")
+                    or _truncate(json.dumps(rec["data"], ensure_ascii=False, default=str), 4000),
+                    raw_event=rec["data"],
+                    severity=_severity_from_text(rec.get("severity")),
+                    source=rec.get("source") or source.name,
+                    status=AlertStatus.new,
+                    event_source_id=source.id,
+                    external_id=external_id,
+                )
+                db.add(alert)
+                await db.flush()
+                await apply_matching_rules(db, alert)
+                new_count += 1
+
+        elif source.source_type == EventSourceType.email:
+            client = EmailClient(
+                host=source.base_url,
+                port=int(config.get("port") or 993),
+                username=source.auth_username,
+                password=secret,
+                mailbox=config.get("mailbox") or "INBOX",
+                use_ssl=bool(config.get("use_ssl", True)),
+            )
+            messages = await client.fetch_alerts(since)
+            for msg in messages:
+                external_id = msg.get("message_id") or f"{source.id}:{msg.get('date')}:{msg.get('subject')}"
+                if await _alert_exists(db, source.id, external_id):
+                    continue
+                alert = Alert(
+                    title=(msg.get("subject") or f"Письмо от {msg.get('from') or 'неизвестного отправителя'}")[:500],
+                    description=_truncate(msg.get("body") or "", 4000),
+                    raw_event=msg,
+                    severity=CaseSeverity.medium,
+                    source=msg.get("from") or source.name,
+                    status=AlertStatus.new,
+                    event_source_id=source.id,
+                    external_id=external_id,
+                )
+                db.add(alert)
+                await db.flush()
+                await apply_matching_rules(db, alert)
+                new_count += 1
+
+        else:  # EventSourceType.json_api
+            client = JsonApiClient(
+                base_url=source.base_url,
+                api_key=secret,
+                api_key_header=config.get("api_key_header") or "X-API-Key",
+                json_path=config.get("json_path"),
+                title_field=config.get("title_field"),
+                description_field=config.get("description_field"),
+                severity_field=config.get("severity_field"),
+                id_field=config.get("id_field"),
+                verify_ssl=source.verify_ssl,
+            )
+            rows = await client.fetch_records()
+            for i, row in enumerate(rows):
+                rec = client.normalize(row, fallback_id=f"{source.id}:{i}")
+                external_id = str(rec["external_id"])
+                if await _alert_exists(db, source.id, external_id):
+                    continue
+                alert = Alert(
+                    title=(rec.get("title") or f"{source.name} #{i}")[:500],
+                    description=rec.get("description")
+                    or _truncate(json.dumps(row, ensure_ascii=False, default=str), 4000),
+                    raw_event=row,
+                    severity=_severity_from_text(rec.get("severity")),
+                    source=rec.get("source") or source.name,
+                    status=AlertStatus.new,
+                    event_source_id=source.id,
+                    external_id=external_id,
                 )
                 db.add(alert)
                 await db.flush()

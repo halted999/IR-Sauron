@@ -18,3 +18,13 @@ export async function createBranchComment(
   const response = await apiClient.post<Comment>(`/branches/${branchId}/comments`, data)
   return response.data
 }
+
+export async function updateBranchLayout(
+  branchId: string,
+  graphLayout: Record<string, { x: number; y: number }>,
+): Promise<Branch> {
+  const response = await apiClient.put<Branch>(`/branches/${branchId}/layout`, {
+    graph_layout: graphLayout,
+  })
+  return response.data
+}

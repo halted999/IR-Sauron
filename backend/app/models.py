@@ -82,6 +82,9 @@ class AlertStatus(str, enum.Enum):
 class EventSourceType(str, enum.Enum):
     elastic = "elastic"
     thehive = "thehive"
+    file_watch = "file_watch"
+    email = "email"
+    json_api = "json_api"
 
 
 class AlertRuleAction(str, enum.Enum):
@@ -351,6 +354,8 @@ class Branch(Base):
     branch_point_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("events.id", ondelete="SET NULL"), nullable=True
     )
+    # Persisted node positions for the Event Graph canvas: {event_id: {x, y}}.
+    graph_layout: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

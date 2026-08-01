@@ -10,7 +10,14 @@ from app.core.auth import get_current_active_user
 from app.core.rbac import require_case_access, require_case_write_access
 from app.database import get_db
 from app.models import Branch, BranchStatus, Case, Event, User
-from app.schemas import BranchCreate, BranchResponse, BranchTreeResponse, BranchUpdate, MessageResponse
+from app.schemas import (
+    BranchCreate,
+    BranchLayoutUpdate,
+    BranchResponse,
+    BranchTreeResponse,
+    BranchUpdate,
+    MessageResponse,
+)
 from app.ws.manager import manager, MSG_BRANCH_STATUS_CHANGED
 
 router = APIRouter(tags=["branches"])
@@ -199,6 +206,24 @@ async def update_branch(
         except Exception:  # noqa: BLE001
             pass
 
+    return branch
+
+
+# ── Graph layout ──────────────────────────────────────────────────────────────
+
+@router.put("/branches/{branch_id}/layout", response_model=BranchResponse)
+async def update_branch_layout(
+    branch_id: uuid.UUID,
+    payload: BranchLayoutUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Branch:
+    branch = await _get_branch_or_404(branch_id, db)
+    await require_case_write_access(branch.case_id, current_user, db)
+
+    branch.graph_layout = payload.graph_layout
+    await db.flush()
+    await db.refresh(branch)
     return branch
 
 

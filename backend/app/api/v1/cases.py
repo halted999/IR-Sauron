@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,7 +12,7 @@ from app.core.rbac import has_permission, require_case_access, require_manage_ca
 from app.database import get_db
 from app.models import (
     AuditLog, Branch, BranchStatus, Case, CaseParticipant,
-    CaseSeverity, CaseStatus, User, UserRole,
+    CaseSeverity, CaseStatus, IOC, User, UserRole,
 )
 from app.schemas import (
     AuditLogEntry, CaseCreate, CaseParticipantAdd,
@@ -51,6 +51,7 @@ async def list_cases(
     case_status: Optional[CaseStatus] = Query(None, alias="status"),
     severity: Optional[CaseSeverity] = None,
     ir_lead_id: Optional[uuid.UUID] = None,
+    q: Optional[str] = Query(None, min_length=1),
     skip: int = 0,
     limit: int = 50,
 ) -> List[Case]:
@@ -71,6 +72,16 @@ async def list_cases(
         filters.append(Case.severity == severity)
     if ir_lead_id:
         filters.append(Case.ir_lead_id == ir_lead_id)
+    if q:
+        pattern = f"%{q.strip()}%"
+        ioc_case_ids = select(IOC.case_id).where(IOC.value.ilike(pattern)).scalar_subquery()
+        filters.append(
+            or_(
+                Case.title.ilike(pattern),
+                cast(Case.id, String).ilike(pattern),
+                Case.id.in_(ioc_case_ids),
+            )
+        )
 
     count_result = await db.execute(select(func.count()).select_from(select(Case.id).where(*filters).subquery()))
     response.headers["X-Total-Count"] = str(count_result.scalar_one())

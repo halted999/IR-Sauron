@@ -13,9 +13,9 @@ import { UserFormModal } from '../components/Admin/UserFormModal'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import {
   getAppSettings, updateAppSettings, backupConfig, backupDatabase, getRolePermissions, updateRolePermissions,
-  restoreConfig, restoreDatabase, RESTORE_CONFIRM_PHRASE,
+  restoreConfig, restoreDatabase, RESTORE_CONFIRM_PHRASE, getAuditLog,
 } from '../api/admin'
-import type { AppSettings, RolePermissionItem } from '../api/admin'
+import type { AppSettings, RolePermissionItem, AuditLogEntry } from '../api/admin'
 import {
   getUsers, createUser, updateUser, deactivateUser, activateUser, deleteUserPermanently,
 } from '../api/users'
@@ -29,7 +29,7 @@ import { EventSourceFormModal } from '../components/Admin/EventSourceFormModal'
 import type { User, UserRole } from '../types'
 import { ROLE_LABELS } from '../types'
 
-type Section = 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup'
+type Section = 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup' | 'audit_log'
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'notifications', label: 'Оповещения' },
@@ -38,11 +38,15 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'event_sources', label: 'Источники алертов' },
   { key: 'timezone', label: 'Временная зона' },
   { key: 'backup', label: 'Импорт/бекап' },
+  { key: 'audit_log', label: 'Лог действий' },
 ]
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   elastic: 'Elastic',
   thehive: 'TheHive',
+  file_watch: 'Чтение из файла',
+  email: 'Электронная почта',
+  json_api: 'JSON по API-ключу',
 }
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
@@ -159,14 +163,20 @@ export const AdminPanelPage: React.FC = () => {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-          <div style={{ maxWidth: 720 }}>
-            {activeSection === 'notifications' && <NotificationsSection />}
-            {activeSection === 'users' && <UsersSection />}
-            {activeSection === 'roles' && <RolesSection />}
-            {activeSection === 'event_sources' && <EventSourcesSection />}
-            {activeSection === 'timezone' && <TimezoneSection />}
-            {activeSection === 'backup' && <BackupSection />}
-          </div>
+          {activeSection === 'event_sources' ? (
+            <EventSourcesSection />
+          ) : activeSection === 'users' ? (
+            <UsersSection />
+          ) : activeSection === 'audit_log' ? (
+            <AuditLogSection />
+          ) : (
+            <div style={{ maxWidth: 720 }}>
+              {activeSection === 'notifications' && <NotificationsSection />}
+              {activeSection === 'roles' && <RolesSection />}
+              {activeSection === 'timezone' && <TimezoneSection />}
+              {activeSection === 'backup' && <BackupSection />}
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
@@ -546,6 +556,191 @@ const UsersSection: React.FC = () => {
   )
 }
 
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  create: 'Создание',
+  update: 'Изменение',
+  delete: 'Удаление',
+  soft_delete: 'Удаление (в корзину)',
+  restore: 'Восстановление',
+  purge: 'Безвозвратное удаление',
+  activate: 'Активация',
+  deactivate: 'Деактивация',
+  merge: 'Слияние',
+  assign: 'Назначение',
+  unassign: 'Снятие назначения',
+  create_link: 'Создание связи',
+  delete_link: 'Удаление связи',
+  add_participant: 'Добавление участника',
+  remove_participant: 'Удаление участника',
+  link_ioc: 'Привязка IOC',
+  unlink_ioc: 'Отвязка IOC',
+  detach_from_case: 'Открепление от инцидента',
+  escalate_from_alert: 'Эскалация в инцидент',
+  escalate_from_alerts_bulk: 'Эскалация в инцидент (массово)',
+  create_from_selection: 'Создание из выборки',
+  upload: 'Загрузка',
+}
+
+const AUDIT_OBJECT_LABELS: Record<string, string> = {
+  case: 'Инцидент',
+  alert: 'Алерт',
+  alert_rule: 'Правило алертов',
+  branch: 'Ветка',
+  event: 'Событие',
+  event_link: 'Связь событий',
+  event_source: 'Источник алертов',
+  ioc: 'IOC',
+  event_ioc: 'Привязка IOC к событию',
+  artifact: 'Артефакт',
+  comment: 'Комментарий',
+  case_participant: 'Участник инцидента',
+  user: 'Пользователь',
+  role_permissions: 'Права ролей',
+  settings: 'Настройки',
+  config: 'Конфигурация',
+  database: 'База данных',
+}
+
+const AUDIT_OBJECT_TYPES = Object.keys(AUDIT_OBJECT_LABELS)
+const AUDIT_ACTIONS = Object.keys(AUDIT_ACTION_LABELS)
+
+const AuditLogSection: React.FC = () => {
+  const toast = useToastStore()
+  const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [objectTypeFilter, setObjectTypeFilter] = useState('')
+  const [actionFilter, setActionFilter] = useState('')
+
+  const load = () => {
+    setIsLoading(true)
+    getAuditLog({
+      limit: 300,
+      object_type: objectTypeFilter || undefined,
+      action: actionFilter || undefined,
+    })
+      .then(setEntries)
+      .catch(() => toast.error('Ошибка загрузки лога действий'))
+      .finally(() => setIsLoading(false))
+  }
+
+  useEffect(load, [objectTypeFilter, actionFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isDeletion = (entry: AuditLogEntry) =>
+    (entry.action === 'delete' || entry.action === 'soft_delete' || entry.action === 'purge') &&
+    (entry.object_type === 'case' || entry.object_type === 'alert')
+
+  return (
+    <div>
+      <SectionHeader
+        title="Лог действий"
+        description="Изменения настроек панели администрирования, а также факты удаления инцидентов и алертов."
+      />
+
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ minWidth: 220 }}>
+          <label htmlFor="audit-object-type">Тип объекта</label>
+          <select
+            id="audit-object-type"
+            value={objectTypeFilter}
+            onChange={(e) => setObjectTypeFilter(e.target.value)}
+          >
+            <option value="">Все</option>
+            {AUDIT_OBJECT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {AUDIT_OBJECT_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ minWidth: 220 }}>
+          <label htmlFor="audit-action">Действие</label>
+          <select id="audit-action" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+            <option value="">Все</option>
+            {AUDIT_ACTIONS.map((a) => (
+              <option key={a} value={a}>
+                {AUDIT_ACTION_LABELS[a]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button variant="ghost" size="sm" onClick={load}>
+          Обновить
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+          <Spinner size={26} />
+        </div>
+      ) : (
+        <div
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        >
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-tertiary)' }}>
+                <Th>Время</Th>
+                <Th>Пользователь</Th>
+                <Th>Действие</Th>
+                <Th>Объект</Th>
+                <Th>Инцидент</Th>
+                <Th>Детали</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry, idx) => (
+                <tr
+                  key={entry.id}
+                  style={{
+                    borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
+                    background: isDeletion(entry) ? 'rgba(248, 81, 73, 0.08)' : undefined,
+                  }}
+                >
+                  <Td>{format(new Date(entry.ts), 'dd.MM.yyyy HH:mm:ss', { locale: ru })}</Td>
+                  <Td>{entry.username ?? '—'}</Td>
+                  <Td>
+                    <span style={{ color: isDeletion(entry) ? 'var(--danger)' : undefined, fontWeight: isDeletion(entry) ? 600 : undefined }}>
+                      {AUDIT_ACTION_LABELS[entry.action] ?? entry.action}
+                    </span>
+                  </Td>
+                  <Td>{AUDIT_OBJECT_LABELS[entry.object_type] ?? entry.object_type}</Td>
+                  <Td>{entry.case_title ?? '—'}</Td>
+                  <Td>
+                    {entry.details && Object.keys(entry.details).length > 0 ? (
+                      <span
+                        style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'monospace' }}
+                        title={JSON.stringify(entry.details, null, 2)}
+                      >
+                        {JSON.stringify(entry.details).slice(0, 120)}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </Td>
+                </tr>
+              ))}
+              {entries.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    Записей не найдено
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Roles ──────────────────────────────────────────────────────────────────────
 
 const RolesSection: React.FC = () => {
@@ -806,7 +1001,7 @@ const EventSourcesSection: React.FC = () => {
               <tr style={{ background: 'var(--bg-tertiary)' }}>
                 <Th>Имя</Th>
                 <Th>Тип</Th>
-                <Th>URL</Th>
+                <Th>URL / папка</Th>
                 <Th>Статус</Th>
                 <Th>Последняя синхронизация</Th>
                 <Th>Действия</Th>

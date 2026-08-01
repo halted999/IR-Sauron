@@ -224,6 +224,11 @@ export const AlertDetailPage: React.FC = () => {
     }
   }
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href)
+    toast.success('Ссылка на алерт скопирована в буфер обмена')
+  }
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -272,17 +277,17 @@ export const AlertDetailPage: React.FC = () => {
             gap: 6,
           }}
         >
-          <Link to="/alerts" style={{ color: 'var(--accent)' }}>
-            Алерты
-          </Link>
-          <span>/</span>
+          <span>Номер</span>
           <code
+            onClick={handleCopyLink}
+            title="Скопировать ссылку на алерт"
             style={{
               fontSize: 12,
               color: 'var(--accent)',
               background: 'rgba(88,166,255,0.1)',
               padding: '1px 6px',
               borderRadius: 4,
+              cursor: 'pointer',
             }}
           >
             {alert.id.slice(0, 8)}

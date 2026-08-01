@@ -5,7 +5,7 @@ import os
 import subprocess
 import uuid
 from datetime import datetime, timezone as dt_timezone
-from typing import Annotated
+from typing import Annotated, List
 from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -22,10 +22,10 @@ from app.core.rbac import (
     require_manage_settings,
 )
 from app.database import AsyncSessionLocal, engine, get_db
-from app.models import AppSettings, RolePermission, User, UserRole
+from app.models import AppSettings, AuditLog, Case, RolePermission, User, UserRole
 from app.schemas import (
-    AppSettingsResponse, AppSettingsUpdate, BackupRequest, RolePermissionItem, RolePermissionsResponse,
-    UpdateRolePermissionsRequest,
+    AppSettingsResponse, AppSettingsUpdate, AuditLogEntryDetailed, BackupRequest, RolePermissionItem,
+    RolePermissionsResponse, UpdateRolePermissionsRequest,
 )
 
 _RESTORE_CONFIRM_PHRASE = "ВОССТАНОВИТЬ"
@@ -55,15 +55,56 @@ async def get_settings(
 @router.put("/settings", response_model=AppSettingsResponse)
 async def update_settings(
     payload: AppSettingsUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_manage_settings)],
+    current_user: Annotated[User, Depends(require_manage_settings)],
 ) -> AppSettings:
     row = await _get_or_create_settings(db)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
         setattr(row, field, value)
+
+    if update_data:
+        await log_action(
+            db=db, user_id=current_user.id, case_id=None,
+            action="update", object_type="settings", object_id="settings",
+            details=update_data, request=request,
+        )
+
     await db.flush()
     await db.refresh(row)
     return row
+
+
+@router.get("/audit-log", response_model=List[AuditLogEntryDetailed])
+async def get_admin_audit_log(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    skip: int = 0,
+    limit: int = 200,
+    object_type: str | None = None,
+    action: str | None = None,
+) -> List[AuditLogEntryDetailed]:
+    query = (
+        select(AuditLog, User.username, Case.title)
+        .outerjoin(User, User.id == AuditLog.user_id)
+        .outerjoin(Case, Case.id == AuditLog.case_id)
+        .order_by(AuditLog.ts.desc())
+    )
+    if object_type:
+        query = query.where(AuditLog.object_type == object_type)
+    if action:
+        query = query.where(AuditLog.action == action)
+    query = query.offset(skip).limit(limit)
+
+    result = await db.execute(query)
+    entries = []
+    for entry, username, case_title in result.all():
+        item = AuditLogEntryDetailed.model_validate(entry)
+        item.username = username
+        item.case_title = case_title
+        entries.append(item)
+    return entries
 
 
 @router.post("/backup/config")

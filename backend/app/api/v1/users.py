@@ -1,10 +1,11 @@
 import uuid
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import log_action
 from app.core.auth import get_current_active_user, get_password_hash
 from app.core.rbac import require_manage_users, require_write_access
 from app.database import get_db
@@ -30,8 +31,9 @@ async def list_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     payload: UserCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_manage_users)],
+    current_user: Annotated[User, Depends(require_manage_users)],
 ) -> User:
     # Ensure uniqueness
     existing = await db.execute(
@@ -54,6 +56,14 @@ async def create_user(
         is_active=True,
     )
     db.add(user)
+    await db.flush()
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="create", object_type="user", object_id=str(user.id),
+        details={"username": user.username, "role": user.role.value}, request=request,
+    )
+
     await db.flush()
     await db.refresh(user)
     return user
@@ -91,6 +101,7 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     payload: UserUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
@@ -118,6 +129,12 @@ async def update_user(
     for field, value in update_data.items():
         setattr(user, field, value)
 
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="update", object_type="user", object_id=str(user.id),
+        details={k: v for k, v in update_data.items()}, request=request,
+    )
+
     await db.flush()
     await db.refresh(user)
     return user
@@ -126,8 +143,9 @@ async def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_user(
     user_id: uuid.UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_manage_users)],
+    current_user: Annotated[User, Depends(require_manage_users)],
 ) -> None:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -135,14 +153,22 @@ async def deactivate_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.is_active = False
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="deactivate", object_type="user", object_id=str(user.id),
+        details={"username": user.username}, request=request,
+    )
+
     await db.flush()
 
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
 async def activate_user(
     user_id: uuid.UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_manage_users)],
+    current_user: Annotated[User, Depends(require_manage_users)],
 ) -> User:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -150,6 +176,13 @@ async def activate_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.is_active = True
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="activate", object_type="user", object_id=str(user.id),
+        details={"username": user.username}, request=request,
+    )
+
     await db.flush()
     await db.refresh(user)
     return user
@@ -158,6 +191,7 @@ async def activate_user(
 @router.delete("/{user_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_permanently(
     user_id: uuid.UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_manage_users)],
 ) -> None:
@@ -171,6 +205,12 @@ async def delete_user_permanently(
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="delete", object_type="user", object_id=str(user.id),
+        details={"username": user.username}, request=request,
+    )
 
     await db.delete(user)
     await db.flush()

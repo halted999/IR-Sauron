@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useCaseStore } from '../store/case'
@@ -184,6 +184,11 @@ export const CasePage: React.FC = () => {
     }
   }
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href)
+    toast.success('Ссылка на инцидент скопирована в буфер обмена')
+  }
+
   const handleSaveEvent = async (data: CreateEventData) => {
     if (!currentBranch) {
       toast.error('Выберите ветку')
@@ -287,11 +292,14 @@ export const CasePage: React.FC = () => {
           <div
             style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Link to="/dashboard" style={{ color: 'var(--accent)' }}>
-              Инциденты
-            </Link>
-            <span>/</span>
-            <span>{currentCase.id.slice(0, 8)}</span>
+            <span>Номер</span>
+            <code
+              onClick={handleCopyLink}
+              title="Скопировать ссылку на инцидент"
+              style={{ color: 'var(--accent)', cursor: 'pointer' }}
+            >
+              {currentCase.id.slice(0, 8)}
+            </code>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -478,6 +486,7 @@ export const CasePage: React.FC = () => {
               <EventGraph
                 events={events}
                 branchId={currentBranch.id}
+                initialLayout={currentBranch.graph_layout}
                 onEventClick={handleEventClick}
                 selectedEventId={selectedEvent?.id}
               />

@@ -15,7 +15,10 @@ from app.schemas import (
     EventSourceTestResult, EventSourceUpdate,
 )
 from app.services.elastic_client import ElasticClient
+from app.services.email_client import EmailClient
 from app.services.event_source_scheduler import sync_source
+from app.services.file_watch_client import FileWatchClient
+from app.services.json_api_client import JsonApiClient
 from app.services.thehive_client import TheHiveClient
 
 router = APIRouter(prefix="/event-sources", tags=["event-sources"])
@@ -187,7 +190,42 @@ async def test_event_source_connection(
     _: Annotated[User, Depends(require_manage_event_sources)],
 ) -> EventSourceTestResult:
     source = await _get_source_or_404(source_id, db)
+    config = source.config or {}
     secret = decrypt_secret(source.auth_secret_encrypted) if source.auth_secret_encrypted else None
+
+    if source.source_type == EventSourceType.file_watch:
+        client = FileWatchClient(
+            folder_path=source.base_url,
+            file_mask=config.get("file_mask"),
+            file_format=config.get("file_format"),
+            csv_delimiter=config.get("csv_delimiter"),
+        )
+        ok, message = await client.test_connection()
+        return EventSourceTestResult(ok=ok, message=message)
+
+    if source.source_type == EventSourceType.email:
+        client = EmailClient(
+            host=source.base_url,
+            port=int(config.get("port") or 993),
+            username=source.auth_username,
+            password=secret,
+            mailbox=config.get("mailbox") or "INBOX",
+            use_ssl=bool(config.get("use_ssl", True)),
+        )
+        ok, message = await client.test_connection()
+        return EventSourceTestResult(ok=ok, message=message)
+
+    if source.source_type == EventSourceType.json_api:
+        client = JsonApiClient(
+            base_url=source.base_url,
+            api_key=secret,
+            api_key_header=config.get("api_key_header") or "X-API-Key",
+            json_path=config.get("json_path"),
+            verify_ssl=source.verify_ssl,
+        )
+        ok, message = await client.test_connection()
+        return EventSourceTestResult(ok=ok, message=message)
+
     client = _build_client(source, secret)
     ok, message = await client.test_connection()
     return EventSourceTestResult(ok=ok, message=message)

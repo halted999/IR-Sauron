@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_active_user
 from app.database import get_db
-from app.models import Alert, User
+from app.models import Alert, Case, IOC, User
 from app.schemas import (
     CorrelationGraphResponse, GraphEdge, GraphNode, StatisticsPeriod, StatisticsResponse, StatusCount,
     ThreatTypeCount, TimelinePoint, ValueCount,
@@ -21,10 +21,23 @@ router = APIRouter(prefix="/statistics", tags=["statistics"])
 
 _PERIODS = {"day", "current_week", "7d", "current_month", "30d", "custom"}
 _TOP_N = 20
-_ENTITY_TOP_N = {"ip": 12, "account": 12, "file": 8}
+_ENTITY_TOP_N = {"ip": 12, "account": 12, "file": 8, "ioc": 8}
 _MAX_ALERTS_PER_ENTITY = 15
 _SEARCH_ENTITY_CAP = 30
 _SEARCH_MAX_ALERTS_PER_ENTITY = 60
+
+# Curated IOC records (added by analysts on a case) are mapped onto the
+# existing ip/account/file graph buckets where the type fits; domain/url
+# don't fit any of those, so they get a generic "ioc" bucket of their own.
+_IOC_KIND_MAP = {
+    "ip": "ip",
+    "email": "account",
+    "filename": "file",
+    "hash_md5": "file",
+    "hash_sha256": "file",
+    "domain": "ioc",
+    "url": "ioc",
+}
 
 
 def _emit_entity_nodes(
@@ -223,7 +236,11 @@ async def get_correlation_graph(
     period_start, period_end = _period_bounds(period, start, end)
 
     result = await db.execute(
-        select(Alert.id, Alert.title, Alert.description, Alert.status, Alert.created_at, Alert.raw_event)
+        select(
+            Alert.id, Alert.title, Alert.description, Alert.status, Alert.created_at, Alert.raw_event,
+            Alert.case_id, Case.title,
+        )
+        .join(Case, Case.id == Alert.case_id, isouter=True)
         .where(
             Alert.is_deleted.is_(False),
             Alert.created_at >= period_start,
@@ -232,12 +249,17 @@ async def get_correlation_graph(
     )
     rows = result.all()
 
-    entity_alerts: Dict[str, Dict[str, Set[str]]] = {"ip": {}, "account": {}, "file": {}}
+    entity_alerts: Dict[str, Dict[str, Set[str]]] = {"ip": {}, "account": {}, "file": {}, "ioc": {}}
     alert_info: Dict[str, Tuple[str, str, datetime]] = {}
+    alert_case_title: Dict[str, Optional[str]] = {}
+    case_alert_ids: Dict[object, Set[str]] = {}
 
-    for alert_id, title, description, alert_status, created_at, raw_event in rows:
+    for alert_id, title, description, alert_status, created_at, raw_event, case_id, case_title in rows:
         alert_id_str = str(alert_id)
         alert_info[alert_id_str] = (title, alert_status, created_at)
+        alert_case_title[alert_id_str] = case_title
+        if case_id is not None:
+            case_alert_ids.setdefault(case_id, set()).add(alert_id_str)
 
         for ip in resolve_ips(title, description, raw_event):
             entity_alerts["ip"].setdefault(ip, set()).add(alert_id_str)
@@ -245,6 +267,19 @@ async def get_correlation_graph(
             entity_alerts["account"].setdefault(account, set()).add(alert_id_str)
         for file_name in resolve_files(title, description, raw_event):
             entity_alerts["file"].setdefault(file_name, set()).add(alert_id_str)
+
+    # Curated IOCs recorded on each incident — a structured complement to the
+    # ip/account/file values scraped from alert text above.
+    if case_alert_ids:
+        ioc_result = await db.execute(
+            select(IOC.case_id, IOC.ioc_type, IOC.value).where(IOC.case_id.in_(case_alert_ids.keys()))
+        )
+        for ioc_case_id, ioc_type, ioc_value in ioc_result.all():
+            kind = _IOC_KIND_MAP.get(ioc_type)
+            if not kind:
+                continue
+            for alert_id_str in case_alert_ids.get(ioc_case_id, ()):
+                entity_alerts[kind].setdefault(ioc_value, set()).add(alert_id_str)
 
     truncated = False
     nodes: List[GraphNode] = []
@@ -254,16 +289,34 @@ async def get_correlation_graph(
     query_norm = q.strip().lower() if q else None
 
     if query_norm:
+        # Alerts whose own title, or their parent incident's title, matches
+        # the query are "seed" alerts — always shown, even with no IOCs yet.
+        seed_alert_ids: Set[str] = {
+            alert_id for alert_id, (title, _status, _created) in alert_info.items()
+            if query_norm in title.lower()
+        }
+        seed_alert_ids |= {
+            alert_id for alert_id, case_title in alert_case_title.items()
+            if case_title and query_norm in case_title.lower()
+        }
+
         # Targeted search: match any ip/account/file whose value contains the
         # query, including values that only occur in a single alert — the
         # point here is "show me this specific value", not "show me noise".
+        # Entities touching a seed alert are pulled in too, so a name search
+        # also surfaces what that alert (or incident) correlates with.
         for kind in entity_alerts:
-            matches = {v: ids for v, ids in entity_alerts[kind].items() if query_norm in v.lower()}
+            matches = {
+                v: ids for v, ids in entity_alerts[kind].items()
+                if query_norm in v.lower() or ids & seed_alert_ids
+            }
             if _emit_entity_nodes(
                 matches, kind, _SEARCH_ENTITY_CAP, _SEARCH_MAX_ALERTS_PER_ENTITY,
                 alert_info, nodes, edges, included_alert_ids,
             ):
                 truncated = True
+
+        included_alert_ids |= seed_alert_ids
     else:
         # Default overview: only entities shared across 2+ alerts represent
         # an actual correlation, capped to the noisiest per kind.

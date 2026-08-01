@@ -105,3 +105,29 @@ export async function updateRolePermissions(
   const response = await apiClient.put<RolePermissionsResponse>('/admin/role-permissions', { permissions })
   return response.data
 }
+
+export interface AuditLogEntry {
+  id: string
+  case_id?: string | null
+  case_title?: string | null
+  user_id?: string | null
+  username?: string | null
+  action: string
+  object_type: string
+  object_id?: string | null
+  details?: Record<string, unknown> | null
+  ip_address?: string | null
+  ts: string
+}
+
+export interface AuditLogParams {
+  skip?: number
+  limit?: number
+  object_type?: string
+  action?: string
+}
+
+export async function getAuditLog(params?: AuditLogParams): Promise<AuditLogEntry[]> {
+  const response = await apiClient.get<AuditLogEntry[]>('/admin/audit-log', { params })
+  return response.data
+}

@@ -51,6 +51,7 @@ export const DashboardPage: React.FC = () => {
   const { cases, total, isLoading, fetchCases } = useCaseStore()
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
   const [showModal, setShowModal] = useState(false)
@@ -58,15 +59,27 @@ export const DashboardPage: React.FC = () => {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
+  // Debounce free-text search — it's matched server-side against the title
+  // and against curated IOCs (IP/account/file/domain/hash) recorded on each
+  // incident, which the client never has loaded, so it can't be done locally.
   useEffect(() => {
-    const params: { status?: string; severity?: string; skip?: number; limit?: number } = {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    const params: { status?: string; severity?: string; q?: string; skip?: number; limit?: number } = {
       skip: (page - 1) * pageSize,
       limit: pageSize,
     }
     if (filterStatus !== 'all') params.status = filterStatus
     if (filterSeverity !== 'all') params.severity = filterSeverity
+    if (debouncedSearch) params.q = debouncedSearch
     fetchCases(params).catch(() => toast.error('Ошибка загрузки инцидентов'))
-  }, [filterStatus, filterSeverity, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterStatus, filterSeverity, debouncedSearch, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterStatusChange = (v: string) => {
     setFilterStatus(v)
@@ -105,22 +118,14 @@ export const DashboardPage: React.FC = () => {
     }
   }
 
-  const filteredCases = cases.filter((c) => {
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
-    if (filterSeverity !== 'all' && c.severity !== filterSeverity) return false
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      if (!c.title.toLowerCase().includes(q) && !c.id.toLowerCase().includes(q)) return false
-    }
-    return true
-  })
-
   const canCreate =
     user?.role === 'admin' || user?.role === 'ir_lead' || user?.role === 'investigator'
 
+  const hasActiveFilter = filterStatus !== 'all' || filterSeverity !== 'all' || debouncedSearch !== ''
+
   return (
     <AppLayout>
-      <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+      <div style={{ padding: '24px 32px', width: '100%' }}>
         {/* Page header */}
         <div
           style={{
@@ -155,7 +160,7 @@ export const DashboardPage: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по номеру или названию инцидента..."
+            placeholder="Поиск по номеру, названию, IOC, IP, учётной записи, файлу..."
             style={{ width: '100%' }}
           />
         </div>
@@ -219,7 +224,7 @@ export const DashboardPage: React.FC = () => {
             </select>
           </div>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 'auto' }}>
-            Найдено: {filteredCases.length}
+            Найдено: {total}
           </span>
         </div>
 
@@ -228,7 +233,7 @@ export const DashboardPage: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
             <Spinner size={32} />
           </div>
-        ) : filteredCases.length === 0 ? (
+        ) : cases.length === 0 ? (
           <div
             style={{
               textAlign: 'center',
@@ -241,9 +246,9 @@ export const DashboardPage: React.FC = () => {
           >
             <div style={{ fontSize: 32, marginBottom: 12 }}>📂</div>
             <p style={{ fontSize: 15, marginBottom: 8 }}>
-              {cases.length === 0 ? 'Инцидентов не найдено' : 'Нет инцидентов по заданному фильтру'}
+              {hasActiveFilter ? 'Нет инцидентов по заданному фильтру' : 'Инцидентов не найдено'}
             </p>
-            {cases.length === 0 && canCreate && (
+            {!hasActiveFilter && canCreate && (
               <Button
                 variant="primary"
                 size="sm"
@@ -276,7 +281,7 @@ export const DashboardPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredCases.map((c, idx) => (
+                {cases.map((c, idx) => (
                   <tr
                     key={c.id}
                     onClick={() => navigate(`/cases/${c.id}`)}

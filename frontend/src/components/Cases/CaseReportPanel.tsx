@@ -427,15 +427,6 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
               />
             </ReportSection>
 
-            {/* Ключевые метрики — вычислены автоматически из хронологии инцидента */}
-            <ReportSection title="Ключевые метрики (авто)">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
-                <SummaryField label="MTTD (время до обнаружения)" value={mttd} />
-                <SummaryField label="Время до локализации" value={timeToContain} />
-                <SummaryField label="MTTR (время до закрытия)" value={mttr} />
-              </div>
-            </ReportSection>
-
             {/* Хронология событий — собрана автоматически из фактов инцидента */}
             <ReportSection title="Хронология событий (авто)">
               {allEvents.length === 0 ? (
@@ -464,34 +455,6 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
                   </table>
                 </div>
               )}
-            </ReportSection>
-
-            {/* Анализ атаки */}
-            <ReportSection title="Анализ атаки">
-              <TextBlock
-                id="report-attack-vector"
-                label="Вектор первичного доступа"
-                isEditing={isEditing}
-                value={form.attack_vector}
-                onChange={(v) => setField('attack_vector', v)}
-                displayValue={currentCase.attack_vector}
-              />
-              <TextBlock
-                id="report-exploited-vulnerability"
-                label="Эксплуатированная уязвимость"
-                isEditing={isEditing}
-                value={form.exploited_vulnerability}
-                onChange={(v) => setField('exploited_vulnerability', v)}
-                displayValue={currentCase.exploited_vulnerability}
-              />
-              <TextBlock
-                id="report-tooling-used"
-                label="Использованный инструментарий"
-                isEditing={isEditing}
-                value={form.tooling_used}
-                onChange={(v) => setField('tooling_used', v)}
-                displayValue={currentCase.tooling_used}
-              />
             </ReportSection>
 
           </div>
@@ -654,6 +617,43 @@ export const CaseReportPanel: React.FC<CaseReportPanelProps> = ({
                   </table>
                 </div>
               )}
+            </ReportSection>
+
+            {/* Ключевые метрики — вычислены автоматически из хронологии инцидента */}
+            <ReportSection title="Ключевые метрики (авто)">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
+                <SummaryField label="MTTD (время до обнаружения)" value={mttd} />
+                <SummaryField label="Время до локализации" value={timeToContain} />
+                <SummaryField label="MTTR (время до закрытия)" value={mttr} />
+              </div>
+            </ReportSection>
+
+            {/* Анализ атаки */}
+            <ReportSection title="Анализ атаки">
+              <TextBlock
+                id="report-attack-vector"
+                label="Вектор первичного доступа"
+                isEditing={isEditing}
+                value={form.attack_vector}
+                onChange={(v) => setField('attack_vector', v)}
+                displayValue={currentCase.attack_vector}
+              />
+              <TextBlock
+                id="report-exploited-vulnerability"
+                label="Эксплуатированная уязвимость"
+                isEditing={isEditing}
+                value={form.exploited_vulnerability}
+                onChange={(v) => setField('exploited_vulnerability', v)}
+                displayValue={currentCase.exploited_vulnerability}
+              />
+              <TextBlock
+                id="report-tooling-used"
+                label="Использованный инструментарий"
+                isEditing={isEditing}
+                value={form.tooling_used}
+                onChange={(v) => setField('tooling_used', v)}
+                displayValue={currentCase.tooling_used}
+              />
             </ReportSection>
           </div>
         </div>

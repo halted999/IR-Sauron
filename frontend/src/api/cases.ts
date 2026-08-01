@@ -4,6 +4,7 @@ import type { Case, CreateCaseData } from '../types'
 export interface CasesParams {
   status?: string
   severity?: string
+  q?: string
   skip?: number
   limit?: number
 }

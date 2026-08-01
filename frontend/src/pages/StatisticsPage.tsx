@@ -230,6 +230,14 @@ export const StatisticsPage: React.FC = () => {
           )}
         </div>
 
+        {!isLoading && data && (
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+            Всего алертов: <strong style={{ color: 'var(--text-primary)' }}>{data.total_alerts}</strong>
+            {'  ·  '}
+            Период: {fmtDate(data.period.start)} — {fmtDate(data.period.end)}
+          </p>
+        )}
+
         {isLoading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
             <Spinner />
@@ -268,20 +276,6 @@ export const StatisticsPage: React.FC = () => {
                   </ResponsiveContainer>
                 </div>
               )}
-            </div>
-
-            {/* Summary */}
-            <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-              <div style={{ ...cardStyle(), minWidth: 200 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Всего алертов</div>
-                <div style={{ fontSize: 28, fontWeight: 700 }}>{data.total_alerts}</div>
-              </div>
-              <div style={{ ...cardStyle(), flex: 1, minWidth: 260 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Период</div>
-                <div style={{ fontSize: 14 }}>
-                  {fmtDate(data.period.start)} — {fmtDate(data.period.end)}
-                </div>
-              </div>
             </div>
 
             {/* Status + threat type */}

@@ -78,8 +78,8 @@ export const AnalysisPage: React.FC = () => {
         <div style={{ marginBottom: 16, flexShrink: 0 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Анализ</h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Связи между алертами по общим IP-адресам, учётным записям и файловым операциям. Введите значение для
-            поиска, чтобы построить граф.
+            Связи между алертами по общим IP-адресам, учётным записям и файловым операциям. Введите IP, файл,
+            учётную запись, название алерта или инцидента, чтобы построить граф.
           </p>
         </div>
 
@@ -91,7 +91,7 @@ export const AnalysisPage: React.FC = () => {
             onKeyDown={(e) => {
               if (e.key === 'Enter') runSearch()
             }}
-            placeholder="IP-адрес, файл или учётная запись..."
+            placeholder="IP-адрес, файл, учётная запись, название алерта или инцидента..."
             style={{ flex: 1, maxWidth: 420 }}
           />
           <button
@@ -163,7 +163,8 @@ export const AnalysisPage: React.FC = () => {
                 padding: 24,
               }}
             >
-              Введите IP-адрес, файл или учётную запись и нажмите «Найти», чтобы построить граф связей
+              Введите IP-адрес, файл, учётную запись, название алерта или инцидента и нажмите «Найти», чтобы
+              построить граф связей
             </div>
           ) : isLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>

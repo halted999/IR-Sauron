@@ -4,16 +4,74 @@ import { ru } from 'date-fns/locale'
 import type { Event, EventLink, ActionType } from '../../types'
 import { ACTION_TYPE_LABELS } from '../../types'
 import { createEventLink, deleteEventLink } from '../../api/events'
+import { updateBranchLayout } from '../../api/branches'
 import { useCaseStore } from '../../store/case'
 import { useToastStore } from '../../store/toast'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
+
+type Position = { x: number; y: number }
 
 interface EventGraphProps {
   events: Event[]
   branchId: string
   onEventClick: (event: Event) => void
   selectedEventId?: string
+  initialLayout?: Record<string, Position> | null
+}
+
+// Groups events into columns by their causal depth in the link graph (longest
+// path from a root with no incoming link), so attack chains read left-to-right
+// instead of wrapping into an arbitrary fixed-width grid.
+function computeLayerLayout(events: Event[], links: EventLink[]): Record<string, Position> {
+  const ids = events.map((e) => e.id)
+  const indexOf = new Set(ids)
+  const adj = new Map<string, string[]>()
+  const indegree = new Map<string, number>()
+  const layer = new Map<string, number>()
+  for (const id of ids) {
+    adj.set(id, [])
+    indegree.set(id, 0)
+    layer.set(id, 0)
+  }
+  for (const link of links) {
+    if (!indexOf.has(link.source_event_id) || !indexOf.has(link.target_event_id)) continue
+    adj.get(link.source_event_id)!.push(link.target_event_id)
+    indegree.set(link.target_event_id, (indegree.get(link.target_event_id) ?? 0) + 1)
+  }
+
+  const queue = ids.filter((id) => (indegree.get(id) ?? 0) === 0)
+  const visited = new Set<string>()
+  let head = 0
+  while (head < queue.length) {
+    const id = queue[head++]
+    if (visited.has(id)) continue
+    visited.add(id)
+    for (const next of adj.get(id) ?? []) {
+      layer.set(next, Math.max(layer.get(next) ?? 0, (layer.get(id) ?? 0) + 1))
+      const remaining = (indegree.get(next) ?? 1) - 1
+      indegree.set(next, remaining)
+      if (remaining <= 0 && !visited.has(next)) queue.push(next)
+    }
+  }
+
+  const byLayer = new Map<number, Event[]>()
+  for (const e of events) {
+    const l = layer.get(e.id) ?? 0
+    if (!byLayer.has(l)) byLayer.set(l, [])
+    byLayer.get(l)!.push(e)
+  }
+  for (const arr of byLayer.values()) {
+    arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.event_ts.localeCompare(b.event_ts))
+  }
+
+  const positions: Record<string, Position> = {}
+  for (const [l, arr] of byLayer.entries()) {
+    arr.forEach((e, row) => {
+      positions[e.id] = { x: GRID_PAD_X + l * GRID_COL_GAP, y: GRID_PAD_Y + row * GRID_ROW_GAP }
+    })
+  }
+  return positions
 }
 
 const LINK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
@@ -32,9 +90,9 @@ const NODE_W = 190
 const NODE_H = 76
 const GRID_COL_GAP = 240
 const GRID_ROW_GAP = 120
-const GRID_COLS = 4
 const GRID_PAD_X = 60
 const GRID_PAD_Y = 70
+const LAYOUT_SAVE_DEBOUNCE_MS = 800
 
 const ACTION_TYPE_COLORS: Record<ActionType, string> = {
   network_connection: '#58a6ff',
@@ -56,19 +114,18 @@ function nodeColor(event: Event): string {
   return EVENT_TYPE_COLORS[event.event_type] ?? 'var(--text-secondary)'
 }
 
-type Position = { x: number; y: number }
-
 export const EventGraph: React.FC<EventGraphProps> = ({
   events,
   branchId,
   onEventClick,
   selectedEventId,
+  initialLayout,
 }) => {
   const toast = useToastStore()
   const { fetchEvents } = useCaseStore()
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const [positions, setPositions] = useState<Record<string, Position>>({})
+  const [positions, setPositions] = useState<Record<string, Position>>(() => initialLayout ?? {})
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState<Position>({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -90,38 +147,65 @@ export const EventGraph: React.FC<EventGraphProps> = ({
 
   const activeEvents = useMemo(() => events.filter((e) => !e.is_deleted), [events])
 
-  // Assign a default grid position to any event that doesn't have one yet.
-  useEffect(() => {
-    setPositions((prev) => {
-      const next = { ...prev }
-      const existingCount = Object.keys(prev).length
-      let idx = existingCount
-      let changed = false
-      for (const e of activeEvents) {
-        if (!next[e.id]) {
-          const col = idx % GRID_COLS
-          const row = Math.floor(idx / GRID_COLS)
-          next[e.id] = { x: GRID_PAD_X + col * GRID_COL_GAP, y: GRID_PAD_Y + row * GRID_ROW_GAP }
-          idx++
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [activeEvents])
-
   // De-duplicate links embedded on both source and target events.
-  const links = useMemo(() => {
+  const rawLinks = useMemo(() => {
     const map = new Map<string, EventLink>()
     for (const e of activeEvents) {
       for (const link of e.linked_events ?? []) {
         map.set(link.id, link)
       }
     }
-    return Array.from(map.values()).filter(
-      (l) => positions[l.source_event_id] && positions[l.target_event_id],
-    )
-  }, [activeEvents, positions])
+    return Array.from(map.values())
+  }, [activeEvents])
+
+  const links = useMemo(
+    () => rawLinks.filter((l) => positions[l.source_event_id] && positions[l.target_event_id]),
+    [rawLinks, positions],
+  )
+
+  // Reset to the saved layout whenever the branch changes (switching branches
+  // reuses this component instance rather than remounting it).
+  const prevBranchIdRef = useRef(branchId)
+  useEffect(() => {
+    if (prevBranchIdRef.current !== branchId) {
+      prevBranchIdRef.current = branchId
+      setPositions(initialLayout ?? {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId])
+
+  // Assign a default layered position (by causal depth in the link graph,
+  // chronological order within a layer) to any event that doesn't have one yet.
+  useEffect(() => {
+    setPositions((prev) => {
+      const missing = activeEvents.filter((e) => !prev[e.id])
+      if (missing.length === 0) return prev
+      const layout = computeLayerLayout(activeEvents, rawLinks)
+      const next = { ...prev }
+      for (const e of missing) {
+        next[e.id] = layout[e.id]
+      }
+      return next
+    })
+  }, [activeEvents, rawLinks])
+
+  // Persist position changes (debounced) so the layout survives a revisit.
+  const savedBranchIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (savedBranchIdRef.current !== branchId) {
+      // Just loaded/reset for this branch — nothing new to persist yet.
+      savedBranchIdRef.current = branchId
+      return
+    }
+    if (Object.keys(positions).length === 0) return
+    const timer = setTimeout(() => {
+      updateBranchLayout(branchId, positions).catch(() => {
+        toast.error('Не удалось сохранить расположение графа')
+      })
+    }, LAYOUT_SAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, branchId])
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number): Position => {

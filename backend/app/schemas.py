@@ -481,6 +481,10 @@ class BranchUpdate(BaseModel):
     status_reason: Optional[str] = None
 
 
+class BranchLayoutUpdate(BaseModel):
+    graph_layout: dict
+
+
 class BranchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -493,6 +497,7 @@ class BranchResponse(BaseModel):
     status_reason: Optional[str]
     parent_branch_id: Optional[uuid.UUID]
     branch_point_event_id: Optional[uuid.UUID]
+    graph_layout: Optional[dict] = None
     created_by: Optional[uuid.UUID]
     created_at: datetime
     updated_at: datetime
@@ -739,6 +744,11 @@ class AuditLogEntry(BaseModel):
     details: Optional[Dict[str, Any]]
     ip_address: Optional[str]
     ts: datetime
+
+
+class AuditLogEntryDetailed(AuditLogEntry):
+    username: Optional[str] = None
+    case_title: Optional[str] = None
 
 
 # ─── Admin settings ───────────────────────────────────────────────────────────

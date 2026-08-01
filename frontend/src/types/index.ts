@@ -167,6 +167,7 @@ export interface Branch {
   status_reason?: string
   owner_id?: string
   is_main: boolean
+  graph_layout?: Record<string, { x: number; y: number }> | null
   created_at: string
   children?: Branch[]
 }
@@ -420,7 +421,7 @@ export const STATISTICS_PERIOD_LABELS: Record<StatisticsPeriodKey, string> = {
   '7d': '7 дней',
   current_month: 'Текущий месяц',
   '30d': '30 дней',
-  custom: 'Выборочный период',
+  custom: 'Период',
 }
 
 export interface StatisticsPeriod {
@@ -463,7 +464,7 @@ export interface StatisticsOverview {
   top_accounts: ValueCount[]
 }
 
-export type GraphNodeKind = 'alert' | 'ip' | 'account' | 'file'
+export type GraphNodeKind = 'alert' | 'ip' | 'account' | 'file' | 'ioc'
 
 export interface CorrelationGraphNode {
   id: string
@@ -476,7 +477,7 @@ export interface CorrelationGraphNode {
 export interface CorrelationGraphEdge {
   source: string
   target: string
-  kind: 'ip' | 'account' | 'file'
+  kind: 'ip' | 'account' | 'file' | 'ioc'
 }
 
 export interface CorrelationGraph {

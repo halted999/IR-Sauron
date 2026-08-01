@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CorrelationGraphEdge, CorrelationGraphNode, GraphNodeKind } from '../../types'
 import { ALERT_STATUS_COLORS, ALERT_STATUS_LABELS } from '../../types'
 
@@ -14,12 +14,14 @@ const ENTITY_COLOR: Record<Exclude<GraphNodeKind, 'alert'>, string> = {
   ip: '#58a6ff',
   account: '#bc8cff',
   file: '#3fb950',
+  ioc: '#d29922',
 }
 
 const ENTITY_LABEL: Record<Exclude<GraphNodeKind, 'alert'>, string> = {
   ip: 'IP-адрес',
   account: 'Учётная запись',
   file: 'Файл',
+  ioc: 'IOC (домен/URL)',
 }
 
 const ALERT_RADIUS = 9
@@ -142,10 +144,22 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     return map
   }, [nodes])
 
-  // Layout is computed once from the full (unfiltered) graph so toggling a
-  // category filter just hides nodes/edges in place instead of reshuffling
-  // everything else's position.
-  const positions = useMemo(() => computeLayout(nodes, edges), [nodes, edges])
+  // Auto-layout (force-directed) runs once per distinct node/edge set, then
+  // nodes can be dragged freely — a manual drag must not get clobbered by a
+  // re-render, so positions live in state rather than a derived useMemo.
+  const [positions, setPositions] = useState<Record<string, Position>>({})
+  const layoutKeyRef = useRef<string>('')
+  useEffect(() => {
+    const key = `${nodes.map((n) => n.id).join(',')}|${edges.length}`
+    if (layoutKeyRef.current !== key) {
+      layoutKeyRef.current = key
+      setPositions(computeLayout(nodes, edges))
+    }
+  }, [nodes, edges])
+
+  const handleAutoLayout = () => {
+    setPositions(computeLayout(nodes, edges))
+  }
 
   const visibleEdges = useMemo(
     () => edges.filter((e) => !hiddenKinds.has(e.kind)),
@@ -156,6 +170,18 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     const connectedAlertIds = new Set(visibleEdges.map((e) => e.target))
     return nodes.filter((n) => (n.kind === 'alert' ? connectedAlertIds.has(n.id) : !hiddenKinds.has(n.kind)))
   }, [nodes, visibleEdges, hiddenKinds])
+
+  const screenToWorld = useCallback(
+    (clientX: number, clientY: number): Position => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return { x: 0, y: 0 }
+      return {
+        x: (clientX - rect.left - pan.x) / zoom,
+        y: (clientY - rect.top - pan.y) / zoom,
+      }
+    },
+    [pan, zoom],
+  )
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -174,16 +200,44 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     [pan, zoom],
   )
 
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const dragMoved = useRef(false)
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
     setIsPanning(true)
     dragStartClient.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
   }
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingId) {
+      dragMoved.current = true
+      const world = screenToWorld(e.clientX, e.clientY)
+      setPositions((prev) => ({ ...prev, [draggingId]: world }))
+      return
+    }
     if (!isPanning) return
     setPan({ x: e.clientX - dragStartClient.current.x, y: e.clientY - dragStartClient.current.y })
   }
-  const handleMouseUp = () => setIsPanning(false)
+  const handleMouseUp = () => {
+    setIsPanning(false)
+    setDraggingId(null)
+  }
+
+  const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
+    e.stopPropagation()
+    if (e.button !== 0) return
+    dragMoved.current = false
+    setDraggingId(nodeId)
+  }
+
+  const handleNodeClick = (e: React.MouseEvent, node: CorrelationGraphNode) => {
+    e.stopPropagation()
+    if (dragMoved.current) {
+      dragMoved.current = false
+      return
+    }
+    if (node.kind === 'alert') onAlertClick(node.id)
+  }
 
   const handleZoomButton = (dir: 1 | -1) => {
     setZoom((z) => Math.min(3, Math.max(0.15, z * (dir === 1 ? 1.25 : 1 / 1.25))))
@@ -223,6 +277,13 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
         <button onClick={handleFit} style={{ ...toolbarBtnStyle, padding: '3px 10px' }}>
           Сбросить масштаб
         </button>
+        <button
+          onClick={handleAutoLayout}
+          style={{ ...toolbarBtnStyle, padding: '3px 10px' }}
+          title="Заново расставить элементы автоматически"
+        >
+          Автораскладка
+        </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginLeft: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Категории:</span>
@@ -247,7 +308,15 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             active={!hiddenKinds.has('file')}
             onClick={() => toggleKind('file')}
           />
+          <Legend
+            color={ENTITY_COLOR.ioc}
+            label="IOC (домен/URL)"
+            shape="diamond"
+            active={!hiddenKinds.has('ioc')}
+            onClick={() => toggleKind('ioc')}
+          />
           <Legend color="var(--text-secondary)" label="Алерт" shape="circle" />
+          <Legend color={ALERT_STATUS_COLORS.escalated} label="Эскалирован" shape="circle" bold />
         </div>
       </div>
 
@@ -312,6 +381,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
               : ENTITY_COLOR[node.kind]
             const radius = isAlert ? ALERT_RADIUS : entityRadius(node.degree)
             const isHovered = node.id === hoveredId
+            const isEscalated = isAlert && node.status === 'escalated'
             const title = node.kind === 'alert'
               ? node.label
               : `${ENTITY_LABEL[node.kind]}: ${node.label} (${node.degree} алертов)`
@@ -321,10 +391,8 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
                 key={node.id}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId((prev) => (prev === node.id ? null : prev))}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (isAlert) onAlertClick(node.id)
-                }}
+                onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                onClick={(e) => handleNodeClick(e, node)}
                 title={title}
                 style={{
                   position: 'absolute',
@@ -335,9 +403,11 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
                   borderRadius: isAlert ? '50%' : 6,
                   transform: isAlert ? undefined : 'rotate(45deg)',
                   background: color,
+                  border: isEscalated ? '3px solid var(--text-primary)' : '3px solid transparent',
+                  boxSizing: 'border-box',
                   opacity: hoveredId && !isHovered ? 0.35 : 1,
                   boxShadow: isHovered ? `0 0 0 3px ${color}55` : '0 1px 4px rgba(0,0,0,0.4)',
-                  cursor: isAlert ? 'pointer' : 'default',
+                  cursor: draggingId === node.id ? 'grabbing' : 'grab',
                   zIndex: isHovered ? 20 : isAlert ? 5 : 8,
                 }}
               />
@@ -417,8 +487,9 @@ const Legend: React.FC<{
   label: string
   shape: 'circle' | 'diamond'
   active?: boolean
+  bold?: boolean
   onClick?: () => void
-}> = ({ color, label, shape, active = true, onClick }) => (
+}> = ({ color, label, shape, active = true, bold = false, onClick }) => (
   <button
     onClick={onClick}
     disabled={!onClick}
@@ -446,6 +517,8 @@ const Legend: React.FC<{
         borderRadius: shape === 'circle' ? '50%' : 2,
         transform: shape === 'diamond' ? 'rotate(45deg)' : undefined,
         background: color,
+        border: bold ? '2px solid var(--text-primary)' : undefined,
+        boxSizing: 'border-box',
       }}
     />
     {label}
