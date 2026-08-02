@@ -84,6 +84,7 @@ async def get_admin_audit_log(
     limit: int = 200,
     object_type: str | None = None,
     action: str | None = None,
+    user_id: uuid.UUID | None = None,
 ) -> List[AuditLogEntryDetailed]:
     query = (
         select(AuditLog, User.username, Case.title)
@@ -95,6 +96,8 @@ async def get_admin_audit_log(
         query = query.where(AuditLog.object_type == object_type)
     if action:
         query = query.where(AuditLog.action == action)
+    if user_id:
+        query = query.where(AuditLog.user_id == user_id)
     query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)

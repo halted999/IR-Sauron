@@ -52,6 +52,7 @@ export interface Alert {
   tags: string[]
   is_deleted: boolean
   deleted_at?: string
+  delete_reason?: string
   assigned_to?: string
   created_by?: string
   created_at: string
@@ -144,6 +145,8 @@ export interface Case {
   new_detection_rules_needed?: string
   recommendations?: string
   approval_notes?: string
+  is_archived?: boolean
+  archived_at?: string
   created_at: string
   updated_at: string
   participants?: CaseParticipant[]

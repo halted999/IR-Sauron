@@ -10,6 +10,7 @@ import { AlertsPage } from './pages/AlertsPage'
 import { AlertDetailPage } from './pages/AlertDetailPage'
 import { StatisticsPage } from './pages/StatisticsPage'
 import { AnalysisPage } from './pages/AnalysisPage'
+import { MitreAttackPage } from './pages/MitreAttackPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminPanelPage } from './pages/AdminPanelPage'
 import { HelpPage } from './pages/HelpPage'
@@ -91,6 +92,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <AnalysisPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mitre-attack"
+          element={
+            <ProtectedRoute>
+              <MitreAttackPage />
             </ProtectedRoute>
           }
         />

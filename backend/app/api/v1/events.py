@@ -10,14 +10,69 @@ from app.core.audit import log_action
 from app.core.auth import get_current_active_user
 from app.core.rbac import require_case_access, require_case_write_access
 from app.database import get_db
-from app.models import Branch, Event, EventIOC, EventLink, EventVersion, User
+from app.models import Branch, Case, Event, EventIOC, EventLink, EventVersion, User
 from app.schemas import (
     EventCreate, EventDeleteRequest, EventLinkCreate, EventLinkResponse,
     EventResponse, EventUpdate, EventVersionResponse,
 )
+from app.services.mitre_attack import highest_grif, highest_severity, raise_grif, raise_severity, tactics_for_fact
 from app.ws.manager import manager, MSG_EVENT_CREATED, MSG_EVENT_UPDATED, MSG_EVENT_DELETED
 
 router = APIRouter(tags=["events"])
+
+
+async def _raise_case_severity_from_mitre(
+    db: AsyncSession, case_id: uuid.UUID, user_id: uuid.UUID, request: Request,
+) -> None:
+    """One-way ratchet: recompute the highest tactic implied by every
+    non-deleted fact/link on the incident and raise Case.severity /
+    confidentiality_label (Гриф) if that implies a higher level than
+    currently set. Never lowers either field — see app.services.mitre_attack.
+    """
+    event_rows = await db.execute(
+        select(Event.mitre_tactic, Event.mitre_technique)
+        .join(Branch, Branch.id == Event.branch_id)
+        .where(Branch.case_id == case_id, Event.is_deleted.is_(False))
+    )
+    all_tactics: List[str] = []
+    for mitre_tactic, mitre_technique in event_rows.all():
+        all_tactics.extend(tactics_for_fact(mitre_tactic, mitre_technique))
+
+    link_rows = await db.execute(
+        select(EventLink.mitre_technique)
+        .join(Event, Event.id == EventLink.source_event_id)
+        .join(Branch, Branch.id == Event.branch_id)
+        .where(Branch.case_id == case_id)
+    )
+    for (mitre_technique,) in link_rows.all():
+        all_tactics.extend(tactics_for_fact(None, mitre_technique))
+
+    if not all_tactics:
+        return
+
+    case_result = await db.execute(select(Case).where(Case.id == case_id))
+    case = case_result.scalar_one_or_none()
+    if case is None:
+        return
+
+    new_severity = raise_severity(case.severity, highest_severity(all_tactics))
+    new_grif = raise_grif(case.confidentiality_label, highest_grif(all_tactics))
+
+    changes: Dict[str, Any] = {}
+    if new_severity != case.severity:
+        changes["severity"] = {"old": case.severity.value, "new": new_severity.value}
+        case.severity = new_severity
+    if new_grif != case.confidentiality_label:
+        changes["confidentiality_label"] = {"old": case.confidentiality_label, "new": new_grif}
+        case.confidentiality_label = new_grif
+
+    if changes:
+        await log_action(
+            db=db, user_id=user_id, case_id=case_id,
+            action="auto_raise_mitre", object_type="case", object_id=str(case_id),
+            details=changes, request=request,
+        )
+        await db.flush()
 
 
 def _event_options():
@@ -172,6 +227,9 @@ async def create_event(
     await db.flush()
     await db.refresh(event)
 
+    if event.mitre_tactic or event.mitre_technique:
+        await _raise_case_severity_from_mitre(db, branch.case_id, current_user.id, request)
+
     # Reload with eager relationships
     loaded = await _get_event_or_404(event.id, db)
     resp = _build_event_response(loaded)
@@ -261,6 +319,9 @@ async def update_event(
     )
 
     await db.flush()
+
+    if "mitre_tactic" in update_data or "mitre_technique" in update_data:
+        await _raise_case_severity_from_mitre(db, branch.case_id, current_user.id, request)
 
     loaded = await _get_event_or_404(event.id, db)
     resp = _build_event_response(loaded)
@@ -421,6 +482,10 @@ async def create_event_link(
 
     await db.flush()
     await db.refresh(link)
+
+    if link.mitre_technique:
+        await _raise_case_severity_from_mitre(db, branch.case_id, current_user.id, request)
+
     return link
 
 

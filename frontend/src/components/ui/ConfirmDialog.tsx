@@ -60,6 +60,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             variant={isDanger ? 'danger' : 'primary'}
             onClick={handleConfirm}
             isLoading={isLoading}
+            disabled={requireReason && !reason.trim()}
           >
             {confirmLabel}
           </Button>

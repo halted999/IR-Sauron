@@ -7,7 +7,8 @@ import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 import { useToastStore } from '../store/toast'
 import { useTimelineWS } from '../hooks/useTimelineWS'
-import { exportCase, updateCase } from '../api/cases'
+import { archiveCase, deleteCase, exportCase, unarchiveCase, updateCase } from '../api/cases'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { createEvent, updateEvent } from '../api/events'
 import { getBranchComments, createBranchComment } from '../api/branches'
 import { CommentList } from '../components/Comments/CommentList'
@@ -103,6 +104,9 @@ export const CasePage: React.FC = () => {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isArchiving, setIsArchiving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const rightPanelWidth = 320
@@ -223,6 +227,35 @@ export const CasePage: React.FC = () => {
       toast.error('Ошибка экспорта')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleToggleArchive = async () => {
+    if (!caseId || !currentCase) return
+    setIsArchiving(true)
+    try {
+      const updated = currentCase.is_archived ? await unarchiveCase(caseId) : await archiveCase(caseId)
+      setCurrentCase(updated)
+      toast.success(currentCase.is_archived ? 'Инцидент возвращён из архива' : 'Инцидент отправлен в архив')
+    } catch {
+      toast.error('Ошибка изменения статуса архивации')
+    } finally {
+      setIsArchiving(false)
+    }
+  }
+
+  const handleConfirmDelete = async (reason: string) => {
+    if (!caseId) return
+    setIsDeleting(true)
+    try {
+      await deleteCase(caseId, reason)
+      toast.success('Инцидент удалён')
+      navigate('/dashboard')
+    } catch {
+      toast.error('Ошибка удаления инцидента')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteDialog(false)
     }
   }
 
@@ -405,6 +438,7 @@ export const CasePage: React.FC = () => {
                     {currentCase.confidentiality_label}
                   </span>
                 )}
+                {currentCase.is_archived && <Badge color="gray" label="В архиве" size="sm" />}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
                 Открыто:{' '}
@@ -429,6 +463,16 @@ export const CasePage: React.FC = () => {
               <Button variant="secondary" size="sm" onClick={handleExport} isLoading={isExporting}>
                 Экспорт JSON
               </Button>
+              {canEdit && (
+                <Button variant="secondary" size="sm" onClick={handleToggleArchive} isLoading={isArchiving}>
+                  {currentCase.is_archived ? 'Разархивировать' : 'Архивировать'}
+                </Button>
+              )}
+              {canEdit && currentCase.is_archived && (
+                <Button variant="danger" size="sm" onClick={() => setShowDeleteDialog(true)}>
+                  Удалить
+                </Button>
+              )}
               {canEdit && (
                 <Button variant="primary" size="sm" onClick={handleAddEvent}>
                   + Добавить факт
@@ -582,6 +626,19 @@ export const CasePage: React.FC = () => {
         defaultBranchId={currentBranch?.id}
         event={editingEvent}
       />
+
+      <ConfirmDialog
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleConfirmDelete}
+        title="Удалить инцидент"
+        message="Инцидент будет удалён безвозвратно. Это действие нельзя отменить."
+        confirmLabel="Удалить"
+        isDanger
+        isLoading={isDeleting}
+        requireReason
+        reasonLabel="Причина удаления"
+      />
     </AppLayout>
   )
 }
@@ -704,22 +761,28 @@ const EventTable: React.FC<{
                 />
               </Td>
               <Td>
-                {event.mitre_technique ? (
-                  <code
-                    style={{
-                      fontSize: 11,
-                      background: 'rgba(88,166,255,0.1)',
-                      color: '#58a6ff',
-                      padding: '1px 5px',
-                      borderRadius: 3,
-                    }}
-                  >
-                    {event.mitre_technique}
-                    {event.mitre_subtechnique ? `.${event.mitre_subtechnique}` : ''}
-                  </code>
-                ) : (
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>—</span>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {event.mitre_technique && (
+                    <code
+                      style={{
+                        fontSize: 11,
+                        background: 'rgba(88,166,255,0.1)',
+                        color: '#58a6ff',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                      }}
+                    >
+                      {event.mitre_technique}
+                      {event.mitre_subtechnique ? `.${event.mitre_subtechnique}` : ''}
+                    </code>
+                  )}
+                  {event.mitre_tactic && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{event.mitre_tactic}</span>
+                  )}
+                  {!event.mitre_technique && !event.mitre_tactic && (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>—</span>
+                  )}
+                </div>
               </Td>
               <Td>
                 {event.artifacts && event.artifacts.length > 0 ? (

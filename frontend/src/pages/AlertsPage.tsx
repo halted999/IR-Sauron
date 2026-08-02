@@ -216,11 +216,11 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (reason: string) => {
     if (!deletingIds || deletingIds.length === 0) return
     setIsBulkBusy(true)
     try {
-      await deleteAlertsBulk(deletingIds)
+      await deleteAlertsBulk(deletingIds, reason)
       removeAlertsFromStore(deletingIds)
       toast.success(`Удалено алертов: ${deletingIds.length}`)
       setSelectedIds(new Set())
@@ -327,7 +327,7 @@ export const AlertsPage: React.FC = () => {
                     onClick={() => setDeletingIds(Array.from(selectedIds))}
                     isLoading={isBulkBusy}
                   >
-                    Удалить ({selectedIds.size})
+                    В архив ({selectedIds.size})
                   </Button>
                 </>
               )}
@@ -697,6 +697,8 @@ export const AlertsPage: React.FC = () => {
         confirmLabel="Удалить"
         isDanger
         isLoading={isBulkBusy}
+        requireReason
+        reasonLabel="Причина удаления"
       />
 
       <ConfirmDialog

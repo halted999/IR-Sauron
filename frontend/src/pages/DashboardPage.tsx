@@ -67,6 +67,7 @@ export const DashboardPage: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
+  const [showArchived, setShowArchived] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingCase, setEditingCase] = useState<Case | null>(null)
   const [page, setPage] = useState(1)
@@ -84,15 +85,23 @@ export const DashboardPage: React.FC = () => {
   }, [search])
 
   useEffect(() => {
-    const params: { status?: string; severity?: string; q?: string; skip?: number; limit?: number } = {
+    const params: {
+      status?: string; severity?: string; q?: string; archived?: boolean; skip?: number; limit?: number
+    } = {
       skip: (page - 1) * pageSize,
       limit: pageSize,
+      archived: showArchived,
     }
     if (filterStatus !== 'all') params.status = filterStatus
     if (filterSeverity !== 'all') params.severity = filterSeverity
     if (debouncedSearch) params.q = debouncedSearch
     fetchCases(params).catch(() => toast.error('Ошибка загрузки инцидентов'))
-  }, [filterStatus, filterSeverity, debouncedSearch, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterStatus, filterSeverity, debouncedSearch, showArchived, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleToggleShowArchived = () => {
+    setShowArchived((v) => !v)
+    setPage(1)
+  }
 
   const handleFilterStatusChange = (v: string) => {
     setFilterStatus(v)
@@ -134,7 +143,8 @@ export const DashboardPage: React.FC = () => {
   const canCreate =
     user?.role === 'admin' || user?.role === 'ir_lead' || user?.role === 'investigator'
 
-  const hasActiveFilter = filterStatus !== 'all' || filterSeverity !== 'all' || debouncedSearch !== ''
+  const hasActiveFilter =
+    filterStatus !== 'all' || filterSeverity !== 'all' || debouncedSearch !== '' || showArchived
 
   return (
     <AppLayout>
@@ -236,6 +246,22 @@ export const DashboardPage: React.FC = () => {
               ))}
             </select>
           </div>
+          <button
+            onClick={handleToggleShowArchived}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12,
+              borderRadius: 20,
+              border: showArchived ? '1px solid var(--accent)' : '1px solid var(--border)',
+              background: showArchived ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
+              color: showArchived ? 'var(--accent)' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {showArchived ? '✓ Архивные' : 'Архивные'}
+          </button>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 'auto' }}>
             Найдено: {total}
           </span>

@@ -191,9 +191,15 @@ class CaseResponse(BaseModel):
     new_detection_rules_needed: Optional[str] = None
     recommendations: Optional[str] = None
     approval_notes: Optional[str] = None
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     participants: List[CaseParticipantResponse] = []
+
+
+class CaseDeleteRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
 
 
 class CaseListResponse(BaseModel):
@@ -264,6 +270,7 @@ class AlertResponse(BaseModel):
     tags: List[str]
     is_deleted: bool
     deleted_at: Optional[datetime]
+    delete_reason: Optional[str] = None
     assigned_to: Optional[uuid.UUID]
     created_by: Optional[uuid.UUID]
     created_at: datetime
@@ -328,6 +335,10 @@ class AlertResponse(BaseModel):
 
 class AlertIdsRequest(BaseModel):
     alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+
+
+class AlertDeleteRequest(AlertIdsRequest):
+    reason: str = Field(..., min_length=1)
 
 
 class SimilarAlert(BaseModel):
@@ -782,6 +793,51 @@ class AppSettingsResponse(BaseModel):
     telegram_chat_id: Optional[str]
     telegram_notifications_enabled: bool
     updated_at: datetime
+
+
+# ─── MITRE ATT&CK ───────────────────────────────────────────────────────────
+
+class MitreTechniqueResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    tactics: List[str]
+    is_subtechnique: bool
+    parent_technique_id: Optional[str]
+
+
+class MitreTacticInfo(BaseModel):
+    shortname: str
+    label: str
+    severity: str
+    grif: str
+
+
+class MitreMatrixResponse(BaseModel):
+    tactics: List[MitreTacticInfo]
+    techniques: List[MitreTechniqueResponse]
+    technique_count: int
+    last_synced_at: Optional[datetime]
+
+
+class MitreSettingsResponse(BaseModel):
+    sync_interval_hours: int
+    last_synced_at: Optional[datetime]
+    last_sync_status: Optional[str]
+    last_sync_message: Optional[str]
+    technique_count: Optional[int]
+    source_url: str
+
+
+class MitreSettingsUpdate(BaseModel):
+    sync_interval_hours: int = Field(..., ge=1, le=720)
+
+
+class MitreSyncResult(BaseModel):
+    ok: bool
+    message: str
+    technique_count: int
 
 
 class BackupRequest(BaseModel):

@@ -65,10 +65,15 @@ function computeLayerLayout(events: Event[], links: EventLink[]): Record<string,
     arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.event_ts.localeCompare(b.event_ts))
   }
 
+  // Alternate each causal layer between a top and a bottom row (zigzag) —
+  // for the common case of a linear attack chain (one node per layer) this
+  // reads as a staggered staircase instead of one flat row, which is much
+  // easier to trace visually than everything lined up on a single line.
   const positions: Record<string, Position> = {}
   for (const [l, arr] of byLayer.entries()) {
+    const baseY = l % 2 === 0 ? ZIGZAG_TOP_Y : ZIGZAG_BOTTOM_Y
     arr.forEach((e, row) => {
-      positions[e.id] = { x: GRID_PAD_X + l * GRID_COL_GAP, y: GRID_PAD_Y + row * GRID_ROW_GAP }
+      positions[e.id] = { x: GRID_PAD_X + l * GRID_COL_GAP, y: baseY + row * GRID_ROW_GAP }
     })
   }
   return positions
@@ -92,6 +97,8 @@ const GRID_COL_GAP = 240
 const GRID_ROW_GAP = 120
 const GRID_PAD_X = 60
 const GRID_PAD_Y = 70
+const ZIGZAG_TOP_Y = GRID_PAD_Y
+const ZIGZAG_BOTTOM_Y = GRID_PAD_Y + NODE_H + 260
 const LAYOUT_SAVE_DEBOUNCE_MS = 800
 
 const ACTION_TYPE_COLORS: Record<ActionType, string> = {

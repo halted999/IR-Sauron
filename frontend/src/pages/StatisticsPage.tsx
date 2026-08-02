@@ -90,47 +90,6 @@ const CountTable: React.FC<{ headLabel: string; rows: { label: string; count: nu
   )
 }
 
-const HorizontalBarCard: React.FC<{ title: string; headLabel: string; rows: { label: string; count: number }[] }> = ({
-  title, headLabel, rows,
-}) => {
-  const chartData = useMemo(
-    () => [...rows].slice(0, 10).reverse().map((r) => ({ name: r.label, count: r.count })),
-    [rows],
-  )
-  return (
-    <div style={cardStyle()}>
-      <SectionTitle>{title}</SectionTitle>
-      {rows.length === 0 ? (
-        <EmptyHint />
-      ) : (
-        <div style={{ width: '100%', height: Math.max(120, chartData.length * 28) }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={150}
-                tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
-                tickFormatter={(v: string) => (v.length > 22 ? `${v.slice(0, 22)}…` : v)}
-              />
-              <Tooltip
-                contentStyle={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: 'var(--text-primary)' }}
-              />
-              <Bar dataKey="count" fill="#58a6ff" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-        <CountTable headLabel={headLabel} rows={rows} />
-      </div>
-    </div>
-  )
-}
-
 const CountListCard: React.FC<{ title: string; headLabel: string; rows: { label: string; count: number }[] }> = ({
   title, headLabel, rows,
 }) => (
@@ -278,6 +237,7 @@ export const StatisticsPage: React.FC = () => {
                       <Tooltip
                         labelFormatter={(v: any) => fmtBucket(v, data.timeline_granularity)}
                         contentStyle={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                        itemStyle={{ color: 'var(--text-primary)' }}
                         labelStyle={{ color: 'var(--text-primary)' }}
                       />
                       <Bar dataKey="count" fill="#58a6ff" radius={[4, 4, 0, 0]} />
@@ -312,6 +272,7 @@ export const StatisticsPage: React.FC = () => {
                         </Pie>
                         <Tooltip
                           contentStyle={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                          itemStyle={{ color: 'var(--text-primary)' }}
                         />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                       </PieChart>
@@ -342,6 +303,7 @@ export const StatisticsPage: React.FC = () => {
                         <YAxis allowDecimals={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
                         <Tooltip
                           contentStyle={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                          itemStyle={{ color: 'var(--text-primary)' }}
                         />
                         <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                           {threatRows.map((row, idx) => (
@@ -361,7 +323,7 @@ export const StatisticsPage: React.FC = () => {
             {/* URL / IP breakdowns */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
               <CountListCard title="Топ URL" headLabel="URL" rows={urlRows} />
-              <HorizontalBarCard title="Внешние IP-адреса" headLabel="IP-адрес" rows={extIpRows} />
+              <CountListCard title="Внешние IP-адреса" headLabel="IP-адрес" rows={extIpRows} />
               <CountListCard title="Внутренние IP-адреса" headLabel="IP-адрес" rows={intIpRows} />
               <CountListCard title="Учётные записи в алертах" headLabel="Учётная запись" rows={accountFromAlertsRows} />
             </div>

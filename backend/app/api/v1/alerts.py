@@ -17,10 +17,12 @@ from app.models import (
 )
 from app.schemas import (
     AlertAssignRequest, AlertBulkEscalateRequest, AlertCreate, AlertEscalateRequest,
-    AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse, SimilarAlert, SimilarAlertsResponse,
+    AlertDeleteRequest, AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse, SimilarAlert,
+    SimilarAlertsResponse,
 )
 from app.services.alert_rules import apply_matching_rules
 from app.services.alert_stats_parsing import is_internal_ip, resolve_accounts, resolve_ips
+from app.services.mitre_attack import raised_alert_severity
 
 _SEVERITY_ORDER = [
     CaseSeverity.critical, CaseSeverity.high, CaseSeverity.medium,
@@ -106,7 +108,7 @@ async def create_alert(
     alert = Alert(
         title=payload.title,
         description=payload.description,
-        severity=payload.severity,
+        severity=raised_alert_severity(payload.title, payload.description, None, payload.severity),
         source=payload.source,
         status=AlertStatus.new,
         created_by=current_user.id,
@@ -412,7 +414,7 @@ async def detach_alert(
 
 @router.post("/delete-bulk", response_model=List[AlertResponse])
 async def delete_alerts_bulk(
-    payload: AlertIdsRequest,
+    payload: AlertDeleteRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_write_access)],
@@ -426,15 +428,19 @@ async def delete_alerts_bulk(
     )
     alerts = list(result.scalars().all())
     now = datetime.now(timezone.utc)
+    reason = payload.reason.strip()
     for alert in alerts:
         alert.is_deleted = True
         alert.deleted_at = now
         alert.deleted_by = current_user.id
+        alert.delete_reason = reason
 
     await log_action(
         db=db, user_id=current_user.id, case_id=None,
         action="soft_delete", object_type="alert",
-        object_id=None, details={"alert_ids": [str(a.id) for a in alerts]}, request=request,
+        object_id=None,
+        details={"alert_ids": [str(a.id) for a in alerts], "reason": reason},
+        request=request,
     )
 
     await db.flush()
@@ -458,6 +464,7 @@ async def restore_alerts_bulk(
         alert.is_deleted = False
         alert.deleted_at = None
         alert.deleted_by = None
+        alert.delete_reason = None
 
     await log_action(
         db=db, user_id=current_user.id, case_id=None,

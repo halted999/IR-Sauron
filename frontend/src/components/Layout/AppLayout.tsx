@@ -53,66 +53,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           overflow: 'hidden',
         }}
       >
-        {/* Sauron theme: full-width background watermark */}
-        {theme === 'sauron' && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              zIndex: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <span
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                letterSpacing: '0.4em',
-                textTransform: 'uppercase',
-                color: 'rgba(255,90,31,0.14)',
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-              }}
-            >
-              find the hobbits
-            </span>
-          </div>
-        )}
-
-        {/* Elves theme: full-width background watermark, in Sindarin */}
-        {theme === 'elves' && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              zIndex: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <span
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                letterSpacing: '0.4em',
-                textTransform: 'uppercase',
-                color: 'rgba(46,139,79,0.16)',
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-              }}
-            >
-              berio i pherian
-            </span>
-          </div>
-        )}
-
         <div
           style={{
             position: 'relative',
@@ -178,6 +118,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           </NavLink>
           <NavLink to="/analysis" style={navLinkStyle}>
             Анализ
+          </NavLink>
+          <NavLink to="/mitre-attack" style={navLinkStyle}>
+            MITRE ATT&amp;CK
           </NavLink>
         </nav>
 
@@ -286,6 +229,38 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         )}
         </div>
       </header>
+
+      {/* Theme watermark banner — its own row below the header (not overlapping
+          the menu), so the full phrase always stays visible. */}
+      {(theme === 'sauron' || theme === 'elves') && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4px 0',
+            overflow: 'hidden',
+            background: 'var(--bg-primary)',
+            borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
+          }}
+        >
+          <span
+            title={theme === 'sauron' ? '«Найти хоббитов» на Чёрной Речи' : undefined}
+            style={{
+              fontSize: 16,
+              fontWeight: 800,
+              letterSpacing: '0.4em',
+              textTransform: 'uppercase',
+              color: theme === 'sauron' ? 'rgba(255,90,31,0.35)' : 'rgba(46,139,79,0.4)',
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+            }}
+          >
+            {theme === 'sauron' ? 'periannath gimbatul' : 'berio i pherian'}
+          </span>
+        </div>
+      )}
 
       {/* Content */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>{children}</main>

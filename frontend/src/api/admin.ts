@@ -125,6 +125,7 @@ export interface AuditLogParams {
   limit?: number
   object_type?: string
   action?: string
+  user_id?: string
 }
 
 export async function getAuditLog(params?: AuditLogParams): Promise<AuditLogEntry[]> {

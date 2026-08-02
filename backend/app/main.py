@@ -25,9 +25,10 @@ from app.models import (  # noqa: F401
 
 from app.api.v1 import (
     auth, users, cases, branches, events, artifacts, iocs, comments, alerts, admin,
-    event_sources, alert_rules, statistics,
+    event_sources, alert_rules, statistics, mitre,
 )
 from app.services.event_source_scheduler import start_scheduler, stop_scheduler
+from app.services.mitre_scheduler import start_scheduler as start_mitre_scheduler, stop_scheduler as stop_mitre_scheduler
 from app.ws.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,37 @@ async def _add_missing_columns_if_needed(conn) -> None:
     await conn.execute(
         text("ALTER TABLE event_links ADD COLUMN IF NOT EXISTS mitre_technique VARCHAR(255) NULL")
     )
+    await conn.execute(text("ALTER TABLE branches ADD COLUMN IF NOT EXISTS graph_layout JSONB NULL"))
+    await conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS delete_reason TEXT NULL"))
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS delete_reason TEXT NULL"))
+    await conn.execute(
+        text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false")
+    )
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL"))
+    await conn.execute(
+        text(
+            "ALTER TABLE cases ADD COLUMN IF NOT EXISTS archived_by UUID NULL "
+            "REFERENCES users(id) ON DELETE SET NULL"
+        )
+    )
+    await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_sync_interval_hours INTEGER NOT NULL DEFAULT 24")
+    )
+    await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_last_synced_at TIMESTAMPTZ NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_last_sync_status VARCHAR(20) NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_last_sync_message TEXT NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_technique_count INTEGER NULL")
+    )
+    await conn.execute(
+        text("ALTER TABLE event_sources ADD COLUMN IF NOT EXISTS file_offsets JSONB NULL")
+    )
 
 
 async def _migrate_legacy_case_status(conn) -> None:
@@ -281,6 +313,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("Could not connect to MinIO at startup: %s", exc)
 
     start_scheduler()
+    start_mitre_scheduler()
 
     logger.info("Startup complete.")
     yield
@@ -288,6 +321,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("Shutting down...")
     stop_scheduler()
+    stop_mitre_scheduler()
     await engine.dispose()
 
 
@@ -354,6 +388,7 @@ app.include_router(admin.router, prefix="/v1")
 app.include_router(event_sources.router, prefix="/v1")
 app.include_router(alert_rules.router, prefix="/v1")
 app.include_router(statistics.router, prefix="/v1")
+app.include_router(mitre.router, prefix="/v1")
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

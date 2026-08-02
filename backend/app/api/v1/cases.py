@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -15,7 +16,7 @@ from app.models import (
     CaseSeverity, CaseStatus, IOC, User, UserRole,
 )
 from app.schemas import (
-    AuditLogEntry, CaseCreate, CaseParticipantAdd,
+    AuditLogEntry, CaseCreate, CaseDeleteRequest, CaseParticipantAdd,
     CaseParticipantResponse, CaseResponse, CaseUpdate,
 )
 
@@ -52,10 +53,12 @@ async def list_cases(
     severity: Optional[CaseSeverity] = None,
     ir_lead_id: Optional[uuid.UUID] = None,
     q: Optional[str] = Query(None, min_length=1),
+    archived: Optional[bool] = None,
     skip: int = 0,
     limit: int = 50,
 ) -> List[Case]:
     filters = [Case.is_deleted == False]  # noqa: E712
+    filters.append(Case.is_archived == (archived if archived is not None else False))
 
     # Users without view_all_cases see only cases where they participate
     if current_user.role != UserRole.admin and not await has_permission(db, current_user.role, "view_all_cases"):
@@ -207,17 +210,71 @@ async def update_case(
     return result.scalar_one()
 
 
+# ── Archive ──────────────────────────────────────────────────────────────────
+
+@router.post("/{case_id}/archive", response_model=CaseResponse)
+async def archive_case(
+    case_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
+) -> Case:
+    case = await _get_case_or_404(case_id, db)
+    case.is_archived = True
+    case.archived_at = datetime.now(timezone.utc)
+    case.archived_by = current_user.id
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=case.id,
+        action="archive", object_type="case", object_id=str(case.id),
+        request=request,
+    )
+    await db.flush()
+    await db.refresh(case)
+    return await _get_case_or_404(case.id, db)
+
+
+@router.post("/{case_id}/unarchive", response_model=CaseResponse)
+async def unarchive_case(
+    case_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
+) -> Case:
+    case = await _get_case_or_404(case_id, db)
+    case.is_archived = False
+    case.archived_at = None
+    case.archived_by = None
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=case.id,
+        action="unarchive", object_type="case", object_id=str(case.id),
+        request=request,
+    )
+    await db.flush()
+    await db.refresh(case)
+    return await _get_case_or_404(case.id, db)
+
+
 # ── Delete (soft) ─────────────────────────────────────────────────────────────
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case(
     case_id: uuid.UUID,
+    payload: CaseDeleteRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_manage_cases)],
 ) -> None:
     case = await _get_case_or_404(case_id, db)
+    if not case.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Инцидент нужно сначала архивировать, прежде чем удалять",
+        )
+    reason = payload.reason.strip()
     case.is_deleted = True
+    case.delete_reason = reason
 
     await log_action(
         db=db,
@@ -226,6 +283,7 @@ async def delete_case(
         action="delete",
         object_type="case",
         object_id=str(case.id),
+        details={"reason": reason},
         request=request,
     )
     await db.flush()

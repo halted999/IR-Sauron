@@ -230,6 +230,12 @@ class Case(Base):
     recommendations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approval_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    delete_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -312,6 +318,7 @@ class Alert(Base):
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    delete_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -700,6 +707,30 @@ class AppSettings(Base):
     telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     telegram_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # MITRE ATT&CK matrix sync (see app.services.mitre_sync)
+    mitre_sync_interval_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+    mitre_last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    mitre_last_sync_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    mitre_last_sync_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mitre_technique_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class MitreTechnique(Base):
+    """One row per ATT&CK technique/sub-technique, refreshed wholesale from
+    the official Enterprise ATT&CK STIX bundle on each sync (see
+    app.services.mitre_sync) — not user-editable.
+    """
+    __tablename__ = "mitre_techniques"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)  # e.g. "T1566", "T1566.001"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tactics: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
+    is_subtechnique: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    parent_technique_id: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -727,6 +758,11 @@ class EventSource(Base):
     last_sync_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     last_sync_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_sync_alert_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # file_watch only: per-file read bookmark — {filename: {"offset": int,
+    # "mtime": iso str, "fieldnames": [...] | null}} — so a poll only reads
+    # the bytes appended since the last read instead of the whole file every
+    # time. See app.services.file_watch_client.
+    file_offsets: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

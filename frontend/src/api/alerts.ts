@@ -67,8 +67,8 @@ export async function detachAlert(id: string): Promise<Alert> {
   return response.data
 }
 
-export async function deleteAlertsBulk(alertIds: string[]): Promise<Alert[]> {
-  const response = await apiClient.post<Alert[]>('/alerts/delete-bulk', { alert_ids: alertIds })
+export async function deleteAlertsBulk(alertIds: string[], reason: string): Promise<Alert[]> {
+  const response = await apiClient.post<Alert[]>('/alerts/delete-bulk', { alert_ids: alertIds, reason })
   return response.data
 }
 

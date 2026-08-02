@@ -561,6 +561,9 @@ const UsersSection: React.FC = () => {
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   create: 'Создание',
   update: 'Изменение',
+  auto_raise_mitre: 'Авто-повышение по MITRE ATT&CK',
+  archive: 'Архивация',
+  unarchive: 'Разархивация',
   delete: 'Удаление',
   soft_delete: 'Удаление (в корзину)',
   restore: 'Восстановление',
@@ -609,9 +612,15 @@ const AUDIT_ACTIONS = Object.keys(AUDIT_ACTION_LABELS)
 const AuditLogSection: React.FC = () => {
   const toast = useToastStore()
   const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [objectTypeFilter, setObjectTypeFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
+  const [userFilter, setUserFilter] = useState('')
+
+  useEffect(() => {
+    getUsers().catch(() => []).then((list) => setUsers(list ?? []))
+  }, [])
 
   const load = () => {
     setIsLoading(true)
@@ -619,13 +628,14 @@ const AuditLogSection: React.FC = () => {
       limit: 300,
       object_type: objectTypeFilter || undefined,
       action: actionFilter || undefined,
+      user_id: userFilter || undefined,
     })
       .then(setEntries)
       .catch(() => toast.error('Ошибка загрузки лога действий'))
       .finally(() => setIsLoading(false))
   }
 
-  useEffect(load, [objectTypeFilter, actionFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [objectTypeFilter, actionFilter, userFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isDeletion = (entry: AuditLogEntry) =>
     (entry.action === 'delete' || entry.action === 'soft_delete' || entry.action === 'purge') &&
@@ -661,6 +671,17 @@ const AuditLogSection: React.FC = () => {
             {AUDIT_ACTIONS.map((a) => (
               <option key={a} value={a}>
                 {AUDIT_ACTION_LABELS[a]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ minWidth: 220 }}>
+          <label htmlFor="audit-user">Пользователь</label>
+          <select id="audit-user" value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
+            <option value="">Все</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.username}
               </option>
             ))}
           </select>

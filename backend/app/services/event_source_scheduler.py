@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
@@ -17,6 +17,7 @@ from app.services.elastic_client import ElasticClient
 from app.services.email_client import EmailClient
 from app.services.file_watch_client import FileWatchClient
 from app.services.json_api_client import JsonApiClient
+from app.services.mitre_attack import raised_alert_severity
 from app.services.thehive_client import TheHiveClient
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,67 @@ async def _alert_exists(db: AsyncSession, source_id, external_id: str) -> bool:
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+# How many file_watch records to check/insert per DB round-trip. A poll that
+# catches up on a large backlog of newly-appended lines (e.g. after the
+# service was down for a while) can have tens of thousands of pending
+# records; batching keeps that to a handful of queries instead of one
+# existence-check + one flush per row.
+_FILE_WATCH_BATCH_SIZE = 500
+
+
+async def _existing_external_ids(db: AsyncSession, source_id, external_ids: List[str]) -> set:
+    if not external_ids:
+        return set()
+    result = await db.execute(
+        select(Alert.external_id).where(
+            Alert.event_source_id == source_id,
+            Alert.external_id.in_(external_ids),
+        )
+    )
+    return {row[0] for row in result.all()}
+
+
+async def _ingest_file_watch_records(
+    db: AsyncSession, source: EventSource, records: List[Dict[str, Any]]
+) -> int:
+    new_count = 0
+    for batch_start in range(0, len(records), _FILE_WATCH_BATCH_SIZE):
+        batch = records[batch_start : batch_start + _FILE_WATCH_BATCH_SIZE]
+        # Offset (not mtime) is the stable per-row identity: appending to the
+        # file changes its mtime but never the byte offset of already-read
+        # lines, so re-polling a growing file can't re-create old alerts.
+        candidate_ids = [f"{rec['_file']}:{rec['_offset']}" for rec in batch]
+        existing = await _existing_external_ids(db, source.id, candidate_ids)
+
+        new_alerts = []
+        for rec, external_id in zip(batch, candidate_ids):
+            if external_id in existing:
+                continue
+            alert = Alert(
+                title=(rec.get("title") or f"{rec['_file']} #{rec['_offset']}")[:500],
+                description=rec.get("description")
+                or _truncate(json.dumps(rec["data"], ensure_ascii=False, default=str), 4000),
+                raw_event=rec["data"],
+                severity=_severity_from_text(rec.get("severity")),
+                source=rec.get("source") or source.name,
+                status=AlertStatus.new,
+                event_source_id=source.id,
+                external_id=external_id,
+            )
+            alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
+            new_alerts.append(alert)
+
+        if not new_alerts:
+            continue
+        db.add_all(new_alerts)
+        await db.flush()
+        for alert in new_alerts:
+            await apply_matching_rules(db, alert)
+        new_count += len(new_alerts)
+
+    return new_count
 
 
 def _elastic_field(doc: Dict[str, Any], dotted_field: str) -> Any:
@@ -121,6 +183,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                     external_id=str(external_id),
                     source_index=hit.get("_index"),
                 )
+                alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
@@ -142,6 +205,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                     external_id=str(external_id),
                     external_url=f"{source.base_url}/index.html#!/alert/{external_id}/details",
                 )
+                alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
@@ -154,26 +218,9 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 file_format=config.get("file_format"),
                 csv_delimiter=config.get("csv_delimiter"),
             )
-            records = await client.fetch_records(since)
-            for rec in records:
-                external_id = f"{rec['_file']}:{rec['_row']}:{rec['_mtime']}"
-                if await _alert_exists(db, source.id, external_id):
-                    continue
-                alert = Alert(
-                    title=(rec.get("title") or f"{rec['_file']} #{rec['_row']}")[:500],
-                    description=rec.get("description")
-                    or _truncate(json.dumps(rec["data"], ensure_ascii=False, default=str), 4000),
-                    raw_event=rec["data"],
-                    severity=_severity_from_text(rec.get("severity")),
-                    source=rec.get("source") or source.name,
-                    status=AlertStatus.new,
-                    event_source_id=source.id,
-                    external_id=external_id,
-                )
-                db.add(alert)
-                await db.flush()
-                await apply_matching_rules(db, alert)
-                new_count += 1
+            records, new_file_offsets = await client.fetch_records(source.file_offsets or {})
+            new_count += await _ingest_file_watch_records(db, source, records)
+            source.file_offsets = new_file_offsets
 
         elif source.source_type == EventSourceType.email:
             client = EmailClient(
@@ -199,6 +246,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                     event_source_id=source.id,
                     external_id=external_id,
                 )
+                alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
@@ -233,6 +281,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                     event_source_id=source.id,
                     external_id=external_id,
                 )
+                alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)

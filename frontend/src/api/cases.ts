@@ -5,6 +5,7 @@ export interface CasesParams {
   status?: string
   severity?: string
   q?: string
+  archived?: boolean
   skip?: number
   limit?: number
 }
@@ -78,5 +79,19 @@ export async function exportCase(id: string): Promise<Blob> {
     responseType: 'blob',
   })
   return response.data as Blob
+}
+
+export async function archiveCase(id: string): Promise<Case> {
+  const response = await apiClient.post<Case>(`/cases/${id}/archive`)
+  return response.data
+}
+
+export async function unarchiveCase(id: string): Promise<Case> {
+  const response = await apiClient.post<Case>(`/cases/${id}/unarchive`)
+  return response.data
+}
+
+export async function deleteCase(id: string, reason: string): Promise<void> {
+  await apiClient.delete(`/cases/${id}`, { data: { reason } })
 }
 
