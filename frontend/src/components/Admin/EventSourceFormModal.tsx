@@ -38,6 +38,12 @@ const DEFAULT_FORM = {
   description_field: '',
   severity_field: '',
   id_field: '',
+  since_param: '',
+  since_format: 'iso' as 'iso' | 'unix' | 'unix_ms',
+  page_param: '',
+  page_size_param: '',
+  page_size: '' as number | '',
+  max_pages: 100,
   is_enabled: true,
   poll_interval_seconds: 300,
 }
@@ -70,6 +76,12 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
         description_field: (source.config?.description_field as string | undefined) ?? '',
         severity_field: (source.config?.severity_field as string | undefined) ?? '',
         id_field: (source.config?.id_field as string | undefined) ?? '',
+        since_param: (source.config?.since_param as string | undefined) ?? '',
+        since_format: (source.config?.since_format as 'iso' | 'unix' | 'unix_ms' | undefined) ?? 'iso',
+        page_param: (source.config?.page_param as string | undefined) ?? '',
+        page_size_param: (source.config?.page_size_param as string | undefined) ?? '',
+        page_size: (source.config?.page_size as number | undefined) ?? '',
+        max_pages: (source.config?.max_pages as number | undefined) ?? 100,
         is_enabled: source.is_enabled,
         poll_interval_seconds: source.poll_interval_seconds,
       })
@@ -124,6 +136,17 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
                       : {}),
                     ...(form.severity_field.trim() ? { severity_field: form.severity_field.trim() } : {}),
                     ...(form.id_field.trim() ? { id_field: form.id_field.trim() } : {}),
+                    ...(form.since_param.trim()
+                      ? { since_param: form.since_param.trim(), since_format: form.since_format }
+                      : {}),
+                    ...(form.page_param.trim()
+                      ? {
+                          page_param: form.page_param.trim(),
+                          ...(form.page_size_param.trim() ? { page_size_param: form.page_size_param.trim() } : {}),
+                          ...(form.page_size !== '' ? { page_size: form.page_size } : {}),
+                          max_pages: form.max_pages || 100,
+                        }
+                      : {}),
                   }
                 : undefined
 
@@ -370,7 +393,89 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
                   onChange={(e) => setField('id_field', e.target.value)}
                   placeholder="id"
                 />
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                  Если у записи нет id — используется хэш содержимого, а не позиция в ответе
+                </span>
               </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 2 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                Инкрементальная синхронизация и пагинация (необязательно)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label htmlFor="es-since-param">Параметр "с даты" (query)</label>
+                  <input
+                    id="es-since-param"
+                    type="text"
+                    value={form.since_param}
+                    onChange={(e) => setField('since_param', e.target.value)}
+                    placeholder="Например: since — если API это поддерживает"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="es-since-format">Формат даты</label>
+                  <select
+                    id="es-since-format"
+                    value={form.since_format}
+                    onChange={(e) => setField('since_format', e.target.value as 'iso' | 'unix' | 'unix_ms')}
+                    disabled={!form.since_param.trim()}
+                  >
+                    <option value="iso">ISO 8601</option>
+                    <option value="unix">Unix-время (сек.)</option>
+                    <option value="unix_ms">Unix-время (мс)</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="es-page-param">Параметр номера страницы</label>
+                  <input
+                    id="es-page-param"
+                    type="text"
+                    value={form.page_param}
+                    onChange={(e) => setField('page_param', e.target.value)}
+                    placeholder="Например: page"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="es-page-size-param">Параметр размера страницы</label>
+                  <input
+                    id="es-page-size-param"
+                    type="text"
+                    value={form.page_size_param}
+                    onChange={(e) => setField('page_size_param', e.target.value)}
+                    placeholder="Например: limit"
+                    disabled={!form.page_param.trim()}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="es-page-size">Размер страницы</label>
+                  <input
+                    id="es-page-size"
+                    type="number"
+                    min={1}
+                    value={form.page_size}
+                    onChange={(e) => setField('page_size', e.target.value ? Number(e.target.value) : '')}
+                    placeholder="Например: 100"
+                    disabled={!form.page_param.trim()}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="es-max-pages">Макс. страниц за опрос</label>
+                  <input
+                    id="es-max-pages"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={form.max_pages}
+                    onChange={(e) => setField('max_pages', Number(e.target.value) || 100)}
+                    disabled={!form.page_param.trim()}
+                  />
+                </div>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                Без параметра страницы источник, как и раньше, делает один запрос и забирает весь ответ целиком.
+              </span>
             </div>
           </>
         )}

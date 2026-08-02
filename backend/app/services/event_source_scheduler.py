@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
@@ -66,12 +66,12 @@ async def _alert_exists(db: AsyncSession, source_id, external_id: str) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-# How many file_watch records to check/insert per DB round-trip. A poll that
-# catches up on a large backlog of newly-appended lines (e.g. after the
-# service was down for a while) can have tens of thousands of pending
-# records; batching keeps that to a handful of queries instead of one
-# existence-check + one flush per row.
-_FILE_WATCH_BATCH_SIZE = 500
+# How many records (file_watch lines or json_api rows) to check/insert per
+# DB round-trip. A poll that catches up on a large backlog (e.g. after the
+# service was down for a while, or a paginated API returning thousands of
+# rows) can have tens of thousands of pending records; batching keeps that
+# to a handful of queries instead of one existence-check + one flush per row.
+_INGEST_BATCH_SIZE = 500
 
 
 async def _existing_external_ids(db: AsyncSession, source_id, external_ids: List[str]) -> set:
@@ -86,12 +86,51 @@ async def _existing_external_ids(db: AsyncSession, source_id, external_ids: List
     return {row[0] for row in result.all()}
 
 
+async def _bulk_ingest_alerts(
+    db: AsyncSession, source: EventSource, candidates: List[Tuple[str, Dict[str, Any]]]
+) -> int:
+    """Shared batched existence-check + insert for sources that build their
+    own list of (external_id, alert_kwargs) candidates up front (json_api).
+    See _ingest_file_watch_records for the file_watch equivalent.
+    """
+    new_count = 0
+    for batch_start in range(0, len(candidates), _INGEST_BATCH_SIZE):
+        batch = candidates[batch_start : batch_start + _INGEST_BATCH_SIZE]
+        ids = [external_id for external_id, _ in batch]
+        existing = await _existing_external_ids(db, source.id, ids)
+
+        # Unlike file_watch's byte-offset identity, a json_api candidate's
+        # external_id can legitimately repeat within the same batch (content
+        # hash for two identical records, or the same record fetched twice
+        # across overlapping pages) — dedupe here too, not just against what
+        # was already committed, or both copies would be inserted.
+        new_alerts = []
+        seen_ids = set()
+        for external_id, kwargs in batch:
+            if external_id in existing or external_id in seen_ids:
+                continue
+            seen_ids.add(external_id)
+            alert = Alert(event_source_id=source.id, external_id=external_id, **kwargs)
+            alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
+            new_alerts.append(alert)
+
+        if not new_alerts:
+            continue
+        db.add_all(new_alerts)
+        await db.flush()
+        for alert in new_alerts:
+            await apply_matching_rules(db, alert)
+        new_count += len(new_alerts)
+
+    return new_count
+
+
 async def _ingest_file_watch_records(
     db: AsyncSession, source: EventSource, records: List[Dict[str, Any]]
 ) -> int:
     new_count = 0
-    for batch_start in range(0, len(records), _FILE_WATCH_BATCH_SIZE):
-        batch = records[batch_start : batch_start + _FILE_WATCH_BATCH_SIZE]
+    for batch_start in range(0, len(records), _INGEST_BATCH_SIZE):
+        batch = records[batch_start : batch_start + _INGEST_BATCH_SIZE]
         # Offset (not mtime) is the stable per-row identity: appending to the
         # file changes its mtime but never the byte offset of already-read
         # lines, so re-polling a growing file can't re-create old alerts.
@@ -263,29 +302,33 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 severity_field=config.get("severity_field"),
                 id_field=config.get("id_field"),
                 verify_ssl=source.verify_ssl,
+                since_param=config.get("since_param"),
+                since_format=config.get("since_format") or "iso",
+                page_param=config.get("page_param"),
+                page_size_param=config.get("page_size_param"),
+                page_size=int(config["page_size"]) if config.get("page_size") else None,
+                page_start=int(config.get("page_start") or 1),
+                max_pages=int(config.get("max_pages") or 100),
+                timeout_seconds=float(config.get("timeout_seconds") or 30),
+                max_response_bytes=int(config.get("max_response_bytes") or (50 * 1024 * 1024)),
             )
-            rows = await client.fetch_records()
-            for i, row in enumerate(rows):
-                rec = client.normalize(row, fallback_id=f"{source.id}:{i}")
-                external_id = str(rec["external_id"])
-                if await _alert_exists(db, source.id, external_id):
-                    continue
-                alert = Alert(
-                    title=(rec.get("title") or f"{source.name} #{i}")[:500],
-                    description=rec.get("description")
-                    or _truncate(json.dumps(row, ensure_ascii=False, default=str), 4000),
-                    raw_event=row,
-                    severity=_severity_from_text(rec.get("severity")),
-                    source=rec.get("source") or source.name,
-                    status=AlertStatus.new,
-                    event_source_id=source.id,
-                    external_id=external_id,
-                )
-                alert.severity = raised_alert_severity(alert.title, alert.description, alert.raw_event, alert.severity)
-                db.add(alert)
-                await db.flush()
-                await apply_matching_rules(db, alert)
-                new_count += 1
+            rows = await client.fetch_records(since)
+            candidates: List[Tuple[str, Dict[str, Any]]] = []
+            for row in rows:
+                rec = client.normalize(row)
+                candidates.append((
+                    str(rec["external_id"]),
+                    dict(
+                        title=(rec.get("title") or f"{source.name} alert")[:500],
+                        description=rec.get("description")
+                        or _truncate(json.dumps(row, ensure_ascii=False, default=str), 4000),
+                        raw_event=row,
+                        severity=_severity_from_text(rec.get("severity")),
+                        source=rec.get("source") or source.name,
+                        status=AlertStatus.new,
+                    ),
+                ))
+            new_count += await _bulk_ingest_alerts(db, source, candidates)
 
         source.last_synced_at = datetime.now(timezone.utc)
         source.last_sync_status = "success"
