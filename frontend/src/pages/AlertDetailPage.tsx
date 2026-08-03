@@ -252,6 +252,14 @@ export const AlertDetailPage: React.FC = () => {
     )
   }
 
+  // ECS event.type (e.g. "creation", "start", "access") when present, else
+  // fall back to a plain top-level "type" field — many of this app's real
+  // source documents (DNS/AD/Citrix/etc. logs) aren't strictly ECS-shaped
+  // and use a flat "type" instead of "event.type". Shown alongside the
+  // source index.
+  const eventType = alert.description_table?.find((row) => row.key === 'event.type')?.value
+    ?? alert.description_table?.find((row) => row.key === 'type')?.value
+
   return (
     <AppLayout>
       <div
@@ -392,6 +400,22 @@ export const AlertDetailPage: React.FC = () => {
               </code>
             ) : (
               '—'
+            )}
+            {eventType && (
+              <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
+                Type:{' '}
+                <code
+                  style={{
+                    fontSize: 12,
+                    background: 'var(--bg-tertiary)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  {eventType}
+                </code>
+              </div>
             )}
           </Field>
           <Field label="Назначен">{assigneeLabel(alert.assigned_to)}</Field>
