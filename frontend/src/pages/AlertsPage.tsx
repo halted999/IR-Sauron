@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -25,6 +25,7 @@ import { MultiSelectDropdown } from '../components/ui/MultiSelectDropdown'
 import type { AlertsParams } from '../api/alerts'
 import type { Alert, AlertStatus, CaseSeverity, CreateAlertData } from '../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../types'
+import { compileKqlQuery } from '../utils/kql'
 
 const STATUS_OPTIONS = (Object.entries(ALERT_STATUS_LABELS) as [AlertStatus, string][]).map(
   ([value, label]) => ({ value, label }),
@@ -172,16 +173,15 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
+  const searchKql = useMemo(() => compileKqlQuery(searchQuery), [searchQuery])
+
   const filteredAlerts = alerts.filter((a) => {
     if (filterStatuses.size > 0 && !filterStatuses.has(a.status)) return false
     if (filterSeverity !== 'all' && a.severity !== filterSeverity) return false
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase()
-      const dateStr = format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru }).toLowerCase()
-      const statusStr = ALERT_STATUS_LABELS[a.status].toLowerCase()
-      const descriptionStr = (a.description ?? '').toLowerCase()
-      if (!dateStr.includes(q) && !statusStr.includes(q) && !descriptionStr.includes(q)) return false
-    }
+    const dateStr = format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })
+    const statusStr = ALERT_STATUS_LABELS[a.status]
+    const descriptionStr = a.description ?? ''
+    if (!searchKql.test(`${dateStr}\n${statusStr}\n${descriptionStr}`)) return false
     return true
   })
 
@@ -362,6 +362,22 @@ export const AlertsPage: React.FC = () => {
           )}
         </div>
 
+        {/* Search */}
+        <div style={{ marginBottom: 16 }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder='Поиск (KQL) по дате, статусу, описанию…'
+            style={{ width: '100%' }}
+          />
+          {searchKql.error && (
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+              Ошибка в запросе: {searchKql.error}
+            </div>
+          )}
+        </div>
+
         {/* Filters */}
         <div
           style={{
@@ -371,13 +387,6 @@ export const AlertsPage: React.FC = () => {
             flexWrap: 'wrap',
           }}
         >
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск по дате, статусу, описанию…"
-            style={{ width: 260 }}
-          />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap', margin: 0 }}>
               Статус:

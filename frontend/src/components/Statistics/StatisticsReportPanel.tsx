@@ -3,10 +3,14 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import {
+  Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 import type { StatisticsOverview, StatisticsPeriodKey, ThreatTypeCount, TimelineGranularity } from '../../types'
 import { ALERT_STATUS_LABELS, STATISTICS_PERIOD_LABELS } from '../../types'
 import { Button } from '../ui/Button'
 import { useToastStore } from '../../store/toast'
+import { compileKqlQuery } from '../../utils/kql'
 
 interface StatisticsReportPanelProps {
   data: StatisticsOverview
@@ -37,9 +41,8 @@ function fmtBucket(iso: string, granularity: TimelineGranularity): string {
   }
 }
 
-function filterByValue<T extends { value: string }>(rows: T[], search: string): T[] {
-  const term = search.trim().toLowerCase()
-  return term ? rows.filter((r) => r.value.toLowerCase().includes(term)) : rows
+function filterByValue<T extends { value: string }>(rows: T[], kql: ReturnType<typeof compileKqlQuery>): T[] {
+  return rows.filter((r) => kql.test(r.value))
 }
 
 export const StatisticsReportPanel: React.FC<StatisticsReportPanelProps> = ({ data, period, search }) => {
@@ -47,11 +50,12 @@ export const StatisticsReportPanel: React.FC<StatisticsReportPanelProps> = ({ da
   const reportRef = useRef<HTMLDivElement>(null)
   const [isExportingPdf, setIsExportingPdf] = useState(false)
 
-  const filteredUrls = useMemo(() => filterByValue(data.top_urls, search), [data.top_urls, search])
-  const filteredExtIps = useMemo(() => filterByValue(data.top_external_ips, search), [data.top_external_ips, search])
-  const filteredIntIps = useMemo(() => filterByValue(data.top_internal_ips, search), [data.top_internal_ips, search])
-  const filteredAccounts = useMemo(() => filterByValue(data.top_accounts, search), [data.top_accounts, search])
-  const filteredFiles = useMemo(() => filterByValue(data.top_files, search), [data.top_files, search])
+  const kql = useMemo(() => compileKqlQuery(search), [search])
+  const filteredUrls = useMemo(() => filterByValue(data.top_urls, kql), [data.top_urls, kql])
+  const filteredExtIps = useMemo(() => filterByValue(data.top_external_ips, kql), [data.top_external_ips, kql])
+  const filteredIntIps = useMemo(() => filterByValue(data.top_internal_ips, kql), [data.top_internal_ips, kql])
+  const filteredAccounts = useMemo(() => filterByValue(data.top_accounts, kql), [data.top_accounts, kql])
+  const filteredFiles = useMemo(() => filterByValue(data.top_files, kql), [data.top_files, kql])
 
   const topStatus = data.by_status[0]
   const topThreat = data.by_threat_type[0]
@@ -176,6 +180,41 @@ export const StatisticsReportPanel: React.FC<StatisticsReportPanelProps> = ({ da
       </div>
 
       <div ref={reportRef} style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '75%', margin: '0 auto' }}>
+        <ReportCard title="Динамика по времени">
+          {data.timeline.every((p) => p.count === 0) ? (
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Нет данных за выбранный период</p>
+          ) : (
+            <div style={{ width: '100%', height: 240 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.timeline} margin={{ top: 20, right: 16, left: -20, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="bucket"
+                    tickFormatter={(v: string) => fmtBucket(v, data.timeline_granularity)}
+                    tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
+                  />
+                  <YAxis allowDecimals={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
+                  <Tooltip
+                    labelFormatter={(v: any) => fmtBucket(v, data.timeline_granularity)}
+                    formatter={(value: any) => [value, 'Алертов']}
+                    contentStyle={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                    itemStyle={{ color: 'var(--text-primary)' }}
+                    labelStyle={{ color: 'var(--text-primary)' }}
+                  />
+                  <Bar dataKey="count" fill="#58a6ff" radius={[4, 4, 0, 0]}>
+                    <LabelList
+                      dataKey="count"
+                      position="top"
+                      formatter={(v: any) => (typeof v === 'number' && v > 0 ? v : '')}
+                      style={{ fill: 'var(--text-secondary)', fontSize: 11 }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ReportCard>
+
         <ReportCard title="Сводка">
           <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>{summaryText}</p>
         </ReportCard>
@@ -202,17 +241,6 @@ export const StatisticsReportPanel: React.FC<StatisticsReportPanelProps> = ({ da
         <ReportCard title="Файлы">
           <ReportTable headLabel="Файл" rows={filteredFiles.map((v) => ({ label: v.value, count: v.count }))} />
         </ReportCard>
-
-        <ReportCard title="Динамика по времени">
-          {data.timeline.length === 0 ? (
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Нет данных за выбранный период</p>
-          ) : (
-            <ReportTable
-              headLabel="Период"
-              rows={data.timeline.map((p) => ({ label: fmtBucket(p.bucket, data.timeline_granularity), count: p.count }))}
-            />
-          )}
-        </ReportCard>
       </div>
     </div>
   )
@@ -234,13 +262,17 @@ const ReportCard: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
 
 const THREAT_BAR_COLOR = '#58a6ff'
 
+function fmtTopValues(values: { value: string; count: number }[]): string {
+  return values.map((v) => `${v.value} (${v.count})`).join(', ')
+}
+
 const ThreatTypeDetailTable: React.FC<{ rows: ThreatTypeCount[]; totalAlerts: number }> = ({ rows, totalAlerts }) => {
   if (rows.length === 0) {
     return <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Нет данных</p>
   }
   const maxCount = Math.max(...rows.map((r) => r.count))
   return (
-    <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+    <div style={{ maxHeight: 480, overflowY: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr>
@@ -256,7 +288,7 @@ const ThreatTypeDetailTable: React.FC<{ rows: ThreatTypeCount[]; totalAlerts: nu
             <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 60 }}>
               Доля
             </th>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 200 }}>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 140 }}>
               Распределение
             </th>
           </tr>
@@ -268,7 +300,19 @@ const ThreatTypeDetailTable: React.FC<{ rows: ThreatTypeCount[]; totalAlerts: nu
             return (
               <tr key={row.threat_type} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{idx + 1}</td>
-                <td style={{ padding: '6px 8px', wordBreak: 'break-all' }}>{row.threat_type}</td>
+                <td style={{ padding: '6px 8px', wordBreak: 'break-all' }}>
+                  <div>{row.threat_type}</div>
+                  {row.top_ips.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
+                      IP-адреса: {fmtTopValues(row.top_ips)}
+                    </div>
+                  )}
+                  {row.top_accounts.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Учётные записи: {fmtTopValues(row.top_accounts)}
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.count}</td>
                 <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>
                   {pct}%

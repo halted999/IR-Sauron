@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, and_, cast, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.schemas import (
     AuditLogEntry, CaseAttachRequest, CaseCreate, CaseDeleteRequest, CaseParticipantAdd,
     CaseParticipantResponse, CaseResponse, CaseUpdate,
 )
+from app.services.kql import KqlSyntaxError, parse_kql, reduce_node, term_to_ilike_pattern
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -78,15 +79,24 @@ async def list_cases(
     if ir_lead_id:
         filters.append(Case.ir_lead_id == ir_lead_id)
     if q:
-        pattern = f"%{q.strip()}%"
-        ioc_case_ids = select(IOC.case_id).where(IOC.value.ilike(pattern)).scalar_subquery()
-        filters.append(
-            or_(
-                Case.title.ilike(pattern),
-                cast(Case.id, String).ilike(pattern),
-                Case.id.in_(ioc_case_ids),
-            )
-        )
+        try:
+            kql_ast = parse_kql(q)
+        except KqlSyntaxError:
+            # Malformed query — degrade to "no filter" rather than a 500 or
+            # an empty result set; the frontend independently validates the
+            # same query and shows the syntax error inline, so this branch
+            # is only ever hit by e.g. a direct API call with a bad query.
+            kql_ast = None
+        if kql_ast is not None:
+            def _case_term_condition(term_value: str, quoted: bool):
+                pattern = term_to_ilike_pattern(term_value, quoted)
+                ioc_case_ids = select(IOC.case_id).where(IOC.value.ilike(pattern)).scalar_subquery()
+                return or_(
+                    Case.title.ilike(pattern),
+                    cast(Case.id, String).ilike(pattern),
+                    Case.id.in_(ioc_case_ids),
+                )
+            filters.append(reduce_node(kql_ast, _case_term_condition, and_, or_, not_))
 
     count_result = await db.execute(select(func.count()).select_from(select(Case.id).where(*filters).subquery()))
     response.headers["X-Total-Count"] = str(count_result.scalar_one())

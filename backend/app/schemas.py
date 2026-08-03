@@ -988,6 +988,8 @@ class ValueCount(BaseModel):
 class ThreatTypeCount(BaseModel):
     threat_type: str
     count: int
+    top_ips: List[ValueCount] = []
+    top_accounts: List[ValueCount] = []
 
 
 class TimelinePoint(BaseModel):

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -21,6 +21,7 @@ import {
   CASE_STATUS_LABELS, CASE_SEVERITY_LABELS,
   getCaseStatusLabel, getCaseStatusIconVariant,
 } from '../types'
+import { compileKqlQuery } from '../utils/kql'
 
 const STATUS_OPTIONS = (Object.entries(CASE_STATUS_LABELS) as [CaseStatus, string][]).map(
   ([value, label]) => ({ value, label }),
@@ -88,6 +89,12 @@ export const DashboardPage: React.FC = () => {
     return () => clearTimeout(timer)
   }, [search])
 
+  // The query is parsed here purely to show an inline syntax error next to
+  // the field — actual filtering happens server-side (see cases.py), which
+  // parses the same grammar independently and degrades to "no filter" on a
+  // bad query, same as this does by omitting `q` below.
+  const searchKql = useMemo(() => compileKqlQuery(debouncedSearch), [debouncedSearch])
+
   useEffect(() => {
     const params: {
       status?: string[]; severity?: string; q?: string; archived?: boolean; skip?: number; limit?: number
@@ -98,10 +105,10 @@ export const DashboardPage: React.FC = () => {
     }
     if (filterStatuses.size > 0) params.status = [...filterStatuses]
     if (filterSeverity !== 'all') params.severity = filterSeverity
-    if (debouncedSearch) params.q = debouncedSearch
+    if (debouncedSearch && !searchKql.error) params.q = debouncedSearch
     fetchCases(params).catch(() => toast.error('Ошибка загрузки инцидентов'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterSeverity, debouncedSearch, showArchived, page, pageSize])
+  }, [filterStatuses, filterSeverity, debouncedSearch, searchKql, showArchived, page, pageSize])
 
   const handleToggleShowArchived = () => {
     setShowArchived((v) => !v)
@@ -188,9 +195,14 @@ export const DashboardPage: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по номеру, названию, IOC, IP, учётной записи, файлу..."
+            placeholder='Поиск (KQL) по номеру, названию, IOC, IP, учётной записи, файлу...'
             style={{ width: '100%' }}
           />
+          {searchKql.error && (
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+              Ошибка в запросе: {searchKql.error} — фильтр временно не применяется
+            </div>
+          )}
         </div>
 
         {/* Filters */}

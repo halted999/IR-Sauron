@@ -461,6 +461,8 @@ export interface StatusCount {
 export interface ThreatTypeCount {
   threat_type: string
   count: number
+  top_ips: ValueCount[]
+  top_accounts: ValueCount[]
 }
 
 export interface ValueCount {

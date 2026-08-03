@@ -28,8 +28,8 @@ const ENTITY_LABEL: Record<Exclude<GraphNodeKind, 'alert'>, string> = {
 type AlertGroup = 'in_case' | 'no_case'
 
 const ALERT_RADIUS = 9
-const CANVAS_W = 2400
-const CANVAS_H = 1600
+const CANVAS_W = 3400
+const CANVAS_H = 2300
 
 function hashSeed(id: string): number {
   let h = 0
@@ -64,12 +64,12 @@ function computeLayout(
   })
 
   const n = nodes.length
-  const iterations = n > 250 ? 60 : n > 150 ? 100 : 200
-  const repulsion = 3200
-  const springLength = 130
-  const springStrength = 0.02
+  const iterations = n > 250 ? 80 : n > 150 ? 130 : 240
+  const repulsion = 9000
+  const springLength = 230
+  const springStrength = 0.018
   const damping = 0.82
-  const centerStrength = 0.0015
+  const centerStrength = 0.0011
 
   for (let iter = 0; iter < iterations; iter++) {
     for (let i = 0; i < n; i++) {

@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Dict, List, Optional, Set, Tuple
 
@@ -13,6 +13,7 @@ from app.schemas import (
     CorrelationGraphResponse, GraphEdge, GraphNode, StatisticsPeriod, StatisticsResponse, StatusCount,
     ThreatTypeCount, TimelinePoint, ValueCount,
 )
+from app.services.kql import KqlSyntaxError, evaluate_text, matches_text, parse_kql
 from app.services.alert_stats_parsing import (
     classify_threat_type, is_internal_ip, resolve_accounts, resolve_files, resolve_ips, resolve_urls,
 )
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/statistics", tags=["statistics"])
 
 _PERIODS = {"day", "current_week", "7d", "current_month", "30d", "custom"}
 _TOP_N = 20
+_THREAT_TYPE_DETAIL_TOP_N = 5
 _ENTITY_TOP_N = {"ip": 12, "account": 12, "file": 8, "ioc": 8}
 _MAX_ALERTS_PER_ENTITY = 15
 _SEARCH_ENTITY_CAP = 30
@@ -186,11 +188,16 @@ async def get_statistics_overview(
     internal_ip_counter: "Counter[str]" = Counter()
     account_counter: "Counter[str]" = Counter()
     file_counter: "Counter[str]" = Counter()
+    # Per-threat-type breakdown for the report's "По типам угроз" table — which
+    # IPs/accounts actually show up under each threat type, not just overall.
+    threat_ip_counters: Dict[str, "Counter[str]"] = defaultdict(Counter)
+    threat_account_counters: Dict[str, "Counter[str]"] = defaultdict(Counter)
     created_ats: List[datetime] = []
 
     for title, description, alert_status, created_at, raw_event in rows:
         status_counter[alert_status] += 1
-        threat_counter[classify_threat_type(title, description)] += 1
+        threat_type = classify_threat_type(title, description)
+        threat_counter[threat_type] += 1
         created_ats.append(created_at)
 
         for url in resolve_urls(title, description, raw_event):
@@ -201,9 +208,11 @@ async def get_statistics_overview(
                 internal_ip_counter[ip] += 1
             else:
                 external_ip_counter[ip] += 1
+            threat_ip_counters[threat_type][ip] += 1
 
         for account in resolve_accounts(title, description, raw_event):
             account_counter[account] += 1
+            threat_account_counters[threat_type][account] += 1
 
         for file_name in resolve_files(title, description, raw_event):
             file_counter[file_name] += 1
@@ -217,7 +226,13 @@ async def get_statistics_overview(
         timeline_granularity=granularity,
         by_status=[StatusCount(status=s, count=c) for s, c in status_counter.most_common()],
         by_threat_type=[
-            ThreatTypeCount(threat_type=t, count=c) for t, c in threat_counter.most_common()
+            ThreatTypeCount(
+                threat_type=t,
+                count=c,
+                top_ips=_top(threat_ip_counters[t], _THREAT_TYPE_DETAIL_TOP_N),
+                top_accounts=_top(threat_account_counters[t], _THREAT_TYPE_DETAIL_TOP_N),
+            )
+            for t, c in threat_counter.most_common()
         ],
         top_urls=_top(url_counter),
         top_external_ips=_top(external_ip_counter),
@@ -293,18 +308,28 @@ async def get_correlation_graph(
     edges: List[GraphEdge] = []
     included_alert_ids: Set[str] = set()
 
-    query_norm = q.strip().lower() if q else None
+    try:
+        kql_ast = parse_kql(q) if q else None
+    except KqlSyntaxError:
+        # Malformed query — degrade to the default overview graph rather
+        # than a 500. AnalysisPage validates the same grammar client-side
+        # and blocks the search button on a bad query, so this only fires
+        # for a direct API call with a broken `q`.
+        kql_ast = None
 
-    if query_norm:
+    if kql_ast is not None:
+        def _matches(text: Optional[str]) -> bool:
+            return evaluate_text(kql_ast, lambda term, quoted: matches_text(term, quoted, text))
+
         # Alerts whose own title, or their parent incident's title, matches
         # the query are "seed" alerts — always shown, even with no IOCs yet.
         seed_alert_ids: Set[str] = {
             alert_id for alert_id, (title, _status, _created) in alert_info.items()
-            if query_norm in title.lower()
+            if _matches(title)
         }
         seed_alert_ids |= {
             alert_id for alert_id, case_title in alert_case_title.items()
-            if case_title and query_norm in case_title.lower()
+            if case_title and _matches(case_title)
         }
 
         # Targeted search: match any ip/account/file whose value contains the
@@ -315,7 +340,7 @@ async def get_correlation_graph(
         for kind in entity_alerts:
             matches = {
                 v: ids for v, ids in entity_alerts[kind].items()
-                if query_norm in v.lower() or ids & seed_alert_ids
+                if _matches(v) or ids & seed_alert_ids
             }
             if _emit_entity_nodes(
                 matches, kind, _SEARCH_ENTITY_CAP, _SEARCH_MAX_ALERTS_PER_ENTITY,

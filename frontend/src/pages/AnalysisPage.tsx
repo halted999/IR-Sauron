@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { CorrelationGraph } from '../components/Graph/CorrelationGraph'
@@ -6,6 +6,7 @@ import { Spinner } from '../components/ui/Spinner'
 import { getCorrelationGraph } from '../api/statistics'
 import { useToastStore } from '../store/toast'
 import type { CorrelationGraph as CorrelationGraphData, StatisticsPeriodKey } from '../types'
+import { compileKqlQuery } from '../utils/kql'
 
 const PERIOD_ORDER: StatisticsPeriodKey[] = ['day', 'current_week', '7d', 'current_month', '30d', 'custom']
 const VALID_PERIODS = new Set<string>(PERIOD_ORDER)
@@ -69,9 +70,11 @@ export const AnalysisPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, activeQuery, customStart, customEnd])
 
+  const searchKql = useMemo(() => compileKqlQuery(searchInput), [searchInput])
+
   const runSearch = () => {
     const trimmed = searchInput.trim()
-    if (!trimmed) return
+    if (!trimmed || searchKql.error) return
     setActiveQuery(trimmed)
     setSearchParams({ q: trimmed, period })
   }
@@ -94,34 +97,41 @@ export const AnalysisPage: React.FC = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexShrink: 0 }}>
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') runSearch()
-            }}
-            placeholder="IP-адрес, файл, учётная запись, название алерта или инцидента..."
-            style={{ flex: 1, maxWidth: 420 }}
-          />
-          <button
-            onClick={runSearch}
-            disabled={!searchInput.trim()}
-            style={{
-              padding: '6px 16px',
-              fontSize: 13,
-              fontWeight: 500,
-              borderRadius: 6,
-              border: '1px solid var(--accent)',
-              background: 'rgba(88,166,255,0.15)',
-              color: 'var(--accent)',
-              cursor: searchInput.trim() ? 'pointer' : 'not-allowed',
-              opacity: searchInput.trim() ? 1 : 0.5,
-            }}
-          >
-            Найти
-          </button>
+        <div style={{ marginBottom: 12, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') runSearch()
+              }}
+              placeholder='Поиск (KQL): IP-адрес, файл, учётная запись, название алерта или инцидента...'
+              style={{ flex: 1, width: '100%' }}
+            />
+            <button
+              onClick={runSearch}
+              disabled={!searchInput.trim() || !!searchKql.error}
+              style={{
+                padding: '6px 16px',
+                fontSize: 13,
+                fontWeight: 500,
+                borderRadius: 6,
+                border: '1px solid var(--accent)',
+                background: 'rgba(88,166,255,0.15)',
+                color: 'var(--accent)',
+                cursor: searchInput.trim() && !searchKql.error ? 'pointer' : 'not-allowed',
+                opacity: searchInput.trim() && !searchKql.error ? 1 : 0.5,
+              }}
+            >
+              Найти
+            </button>
+          </div>
+          {searchKql.error && (
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+              Ошибка в запросе: {searchKql.error}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16, flexShrink: 0 }}>

@@ -14,6 +14,7 @@ import type {
   StatisticsOverview, StatisticsPeriodKey, ThreatTypeCount, TimelineGranularity, ValueCount,
 } from '../types'
 import { ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, STATISTICS_PERIOD_LABELS } from '../types'
+import { compileKqlQuery } from '../utils/kql'
 
 const PERIOD_ORDER: StatisticsPeriodKey[] = [
   'day', 'current_week', '7d', 'current_month', '30d', 'custom',
@@ -167,15 +168,14 @@ export const StatisticsPage: React.FC = () => {
     [data],
   )
 
-  const searchTerm = search.trim().toLowerCase()
-  const filterBySearch = (rows: { label: string; count: number }[]) =>
-    searchTerm ? rows.filter((r) => r.label.toLowerCase().includes(searchTerm)) : rows
+  const kql = useMemo(() => compileKqlQuery(search), [search])
+  const filterBySearch = (rows: { label: string; count: number }[]) => rows.filter((r) => kql.test(r.label))
 
-  const filteredUrlRows = useMemo(() => filterBySearch(urlRows), [urlRows, searchTerm])
-  const filteredExtIpRows = useMemo(() => filterBySearch(extIpRows), [extIpRows, searchTerm])
-  const filteredIntIpRows = useMemo(() => filterBySearch(intIpRows), [intIpRows, searchTerm])
-  const filteredAccountRows = useMemo(() => filterBySearch(accountFromAlertsRows), [accountFromAlertsRows, searchTerm])
-  const filteredFileRows = useMemo(() => filterBySearch(fileRows), [fileRows, searchTerm])
+  const filteredUrlRows = useMemo(() => filterBySearch(urlRows), [urlRows, kql])
+  const filteredExtIpRows = useMemo(() => filterBySearch(extIpRows), [extIpRows, kql])
+  const filteredIntIpRows = useMemo(() => filterBySearch(intIpRows), [intIpRows, kql])
+  const filteredAccountRows = useMemo(() => filterBySearch(accountFromAlertsRows), [accountFromAlertsRows, kql])
+  const filteredFileRows = useMemo(() => filterBySearch(fileRows), [fileRows, kql])
 
   return (
     <AppLayout>
@@ -192,8 +192,8 @@ export const StatisticsPage: React.FC = () => {
         <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
           {(
             [
-              { key: 'overview', label: 'Обзор' },
-              { key: 'report', label: 'Отчёт' },
+              { key: 'report', label: 'Обзор' },
+              { key: 'overview', label: 'Отчёт' },
             ] as { key: StatisticsSection; label: string }[]
           ).map(({ key, label }) => (
             <button
@@ -215,6 +215,24 @@ export const StatisticsPage: React.FC = () => {
               {label}
             </button>
           ))}
+        </div>
+
+        {/* Search across value tables (URL, IP, files, accounts) — supports a small
+            KQL-like query language: AND / OR / NOT, parentheses, "quoted phrases"
+            and * wildcards. See kql.ts for the grammar. */}
+        <div style={{ marginBottom: 16 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder='Поиск (KQL): "192.168.100.12" AND NOT (*.mordor.local OR freepeople.local)'
+            style={{ width: '100%' }}
+          />
+          {kql.error && (
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+              Ошибка в запросе: {kql.error} — фильтр временно не применяется
+            </div>
+          )}
         </div>
 
         {/* Period selector */}
@@ -244,17 +262,6 @@ export const StatisticsPage: React.FC = () => {
               <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} style={{ width: 150 }} />
             </div>
           )}
-        </div>
-
-        {/* Search across value tables (URL, IP, files, accounts) */}
-        <div style={{ marginBottom: 20 }}>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по URL, IP-адресу, файлу или учётной записи..."
-            style={{ maxWidth: 420 }}
-          />
         </div>
 
         {!isLoading && data && (
