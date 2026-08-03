@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -9,8 +9,8 @@ import { useToastStore } from '../store/toast'
 import { useTimelineWS } from '../hooks/useTimelineWS'
 import { archiveCase, deleteCase, detachCase, unarchiveCase, updateCase } from '../api/cases'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
-import { createEvent, updateEvent } from '../api/events'
-import { getBranchComments, createBranchComment } from '../api/branches'
+import { createEvent, updateEvent, getEvents } from '../api/events'
+import { getBranchComments, createBranchComment, getBranches } from '../api/branches'
 import { CommentList } from '../components/Comments/CommentList'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { EventGraph } from '../components/Graph/EventGraph'
@@ -113,6 +113,9 @@ export const CasePage: React.FC = () => {
   const [isAssigning, setIsAssigning] = useState(false)
   const [showAttachModal, setShowAttachModal] = useState(false)
   const [isDetaching, setIsDetaching] = useState<string | null>(null)
+  const [attachedGraphData, setAttachedGraphData] = useState<
+    { caseId: string; caseTitle: string; events: Event[] }[]
+  >([])
   const rightPanelWidth = 320
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
 
@@ -135,6 +138,54 @@ export const CasePage: React.FC = () => {
       fetchEvents(currentBranch.id).catch(() => toast.error('Ошибка загрузки событий'))
     }
   }, [currentBranch?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const attachedCaseIds = currentCase?.attached_cases?.map((c) => c.id).join(',') ?? ''
+
+  // Pull in each attached (child) incident's main-branch events so they can
+  // be shown alongside this incident's own graph — read-only, see
+  // EventGraph's foreignEvents prop.
+  useEffect(() => {
+    const children = currentCase?.attached_cases ?? []
+    if (children.length === 0) {
+      setAttachedGraphData([])
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      children.map(async (c) => {
+        try {
+          const caseBranches = await getBranches(c.id)
+          const mainBranch = caseBranches.find((b) => b.is_main) ?? caseBranches[0]
+          if (!mainBranch) return { caseId: c.id, caseTitle: c.title, events: [] as Event[] }
+          const childEvents = await getEvents(mainBranch.id)
+          return { caseId: c.id, caseTitle: c.title, events: childEvents }
+        } catch {
+          return { caseId: c.id, caseTitle: c.title, events: [] as Event[] }
+        }
+      }),
+    ).then((results) => {
+      if (!cancelled) setAttachedGraphData(results)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedCaseIds])
+
+  const foreignGraphEvents = useMemo(() => {
+    const map: Record<string, { caseId: string; caseTitle: string }> = {}
+    for (const g of attachedGraphData) {
+      for (const e of g.events) {
+        map[e.id] = { caseId: g.caseId, caseTitle: g.caseTitle }
+      }
+    }
+    return map
+  }, [attachedGraphData])
+
+  const combinedGraphEvents = useMemo(
+    () => [...events, ...attachedGraphData.flatMap((g) => g.events)],
+    [events, attachedGraphData],
+  )
 
   const handleEventClick = useCallback((event: Event) => {
     setSelectedEvent(event)
@@ -555,11 +606,13 @@ export const CasePage: React.FC = () => {
 
             {activeTab === 'graph' && currentBranch && (
               <EventGraph
-                events={events}
+                events={combinedGraphEvents}
                 branchId={currentBranch.id}
                 initialLayout={currentBranch.graph_layout}
                 onEventClick={handleEventClick}
                 selectedEventId={selectedEvent?.id}
+                foreignEvents={foreignGraphEvents}
+                onForeignEventClick={(childCaseId) => navigate(`/cases/${childCaseId}`)}
               />
             )}
 

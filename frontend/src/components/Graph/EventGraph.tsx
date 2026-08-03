@@ -12,12 +12,22 @@ import { Modal } from '../ui/Modal'
 
 type Position = { x: number; y: number }
 
+interface ForeignEventInfo {
+  caseId: string
+  caseTitle: string
+}
+
 interface EventGraphProps {
   events: Event[]
   branchId: string
   onEventClick: (event: Event) => void
   selectedEventId?: string
   initialLayout?: Record<string, Position> | null
+  // Events pulled in from an attached (child) incident's graph, shown
+  // alongside this branch's own — read-only: not draggable, can't be a link
+  // endpoint, and their positions aren't persisted into this branch's layout.
+  foreignEvents?: Record<string, ForeignEventInfo>
+  onForeignEventClick?: (caseId: string) => void
 }
 
 // Groups events into columns by their causal depth in the link graph (longest
@@ -127,6 +137,8 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   onEventClick,
   selectedEventId,
   initialLayout,
+  foreignEvents = {},
+  onForeignEventClick,
 }) => {
   const toast = useToastStore()
   const { fetchEvents } = useCaseStore()
@@ -204,9 +216,16 @@ export const EventGraph: React.FC<EventGraphProps> = ({
       savedBranchIdRef.current = branchId
       return
     }
-    if (Object.keys(positions).length === 0) return
+    // Foreign (attached-incident) node positions are recomputed on every
+    // visit rather than persisted — they belong to a different branch, and
+    // saving them here would silently write cross-incident data into this
+    // branch's own layout.
+    const ownPositions = Object.fromEntries(
+      Object.entries(positions).filter(([id]) => !foreignEvents[id]),
+    )
+    if (Object.keys(ownPositions).length === 0) return
     const timer = setTimeout(() => {
-      updateBranchLayout(branchId, positions).catch(() => {
+      updateBranchLayout(branchId, ownPositions).catch(() => {
         toast.error('Не удалось сохранить расположение графа')
       })
     }, LAYOUT_SAVE_DEBOUNCE_MS)
@@ -284,6 +303,7 @@ export const EventGraph: React.FC<EventGraphProps> = ({
   const handleNodeMouseDown = (e: React.MouseEvent, eventId: string) => {
     e.stopPropagation()
     if (e.button !== 0) return
+    if (foreignEvents[eventId]) return
     dragMoved.current = false
     setDraggingId(eventId)
   }
@@ -294,8 +314,9 @@ export const EventGraph: React.FC<EventGraphProps> = ({
       dragMoved.current = false
       return
     }
+    const foreign = foreignEvents[event.id]
     if (linkingFromId) {
-      if (linkingFromId !== event.id) {
+      if (linkingFromId !== event.id && !foreign) {
         setPendingLink({ sourceId: linkingFromId, targetId: event.id })
         setLinkDescInput('')
         setLinkActionType('network_connection')
@@ -306,11 +327,16 @@ export const EventGraph: React.FC<EventGraphProps> = ({
       setLinkingFromId(null)
       return
     }
+    if (foreign) {
+      onForeignEventClick?.(foreign.caseId)
+      return
+    }
     onEventClick(event)
   }
 
   const handleStartLink = (e: React.MouseEvent, eventId: string) => {
     e.stopPropagation()
+    if (foreignEvents[eventId]) return
     setLinkingFromId((prev) => (prev === eventId ? null : eventId))
   }
 
@@ -537,11 +563,13 @@ export const EventGraph: React.FC<EventGraphProps> = ({
             const color = nodeColor(event)
             const isSelected = event.id === selectedEventId
             const isLinkSource = event.id === linkingFromId
+            const foreign = foreignEvents[event.id]
             return (
               <div
                 key={event.id}
                 onMouseDown={(e) => handleNodeMouseDown(e, event.id)}
                 onClick={(e) => handleNodeClick(e, event)}
+                title={foreign ? `Инцидент: ${foreign.caseTitle}` : undefined}
                 style={{
                   position: 'absolute',
                   left: pos.x,
@@ -549,11 +577,12 @@ export const EventGraph: React.FC<EventGraphProps> = ({
                   width: NODE_W,
                   minHeight: NODE_H,
                   background: 'var(--bg-secondary)',
-                  border: `1.5px solid ${isLinkSource ? 'var(--accent)' : color}`,
+                  border: `1.5px ${foreign ? 'dashed' : 'solid'} ${isLinkSource ? 'var(--accent)' : color}`,
                   borderLeft: `4px solid ${color}`,
                   borderRadius: 8,
                   padding: '8px 10px',
                   cursor: 'pointer',
+                  opacity: foreign ? 0.85 : 1,
                   boxShadow: isSelected ? '0 0 0 2px var(--accent)' : '0 2px 6px rgba(0,0,0,0.3)',
                   zIndex: 10,
                 }}
@@ -573,26 +602,28 @@ export const EventGraph: React.FC<EventGraphProps> = ({
                   >
                     {event.title}
                   </div>
-                  <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => handleStartLink(e, event.id)}
-                    title="Создать связь"
-                    style={{
-                      flexShrink: 0,
-                      width: 18,
-                      height: 18,
-                      borderRadius: '50%',
-                      border: '1px solid var(--border)',
-                      background: isLinkSource ? 'var(--accent)' : 'var(--bg-tertiary)',
-                      color: isLinkSource ? '#fff' : 'var(--text-secondary)',
-                      fontSize: 11,
-                      lineHeight: '16px',
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    ⚭
-                  </button>
+                  {!foreign && (
+                    <button
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => handleStartLink(e, event.id)}
+                      title="Создать связь"
+                      style={{
+                        flexShrink: 0,
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        border: '1px solid var(--border)',
+                        background: isLinkSource ? 'var(--accent)' : 'var(--bg-tertiary)',
+                        color: isLinkSource ? '#fff' : 'var(--text-secondary)',
+                        fontSize: 11,
+                        lineHeight: '16px',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      ⚭
+                    </button>
+                  )}
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
                   {event.event_ts && format(new Date(event.event_ts), 'dd.MM.yyyy HH:mm', { locale: ru })}
@@ -600,6 +631,16 @@ export const EventGraph: React.FC<EventGraphProps> = ({
                 {event.action_type && (
                   <div style={{ fontSize: 10, color, marginTop: 2 }}>
                     {ACTION_TYPE_LABELS[event.action_type]}
+                  </div>
+                )}
+                {foreign && (
+                  <div
+                    style={{
+                      fontSize: 9, fontWeight: 600, color: 'var(--accent)', marginTop: 2,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    → {foreign.caseTitle}
                   </div>
                 )}
               </div>
