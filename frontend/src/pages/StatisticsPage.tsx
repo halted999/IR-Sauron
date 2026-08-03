@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { Spinner } from '../components/ui/Spinner'
+import { StatisticsReportPanel } from '../components/Statistics/StatisticsReportPanel'
 import { getStatisticsOverview } from '../api/statistics'
 import { useToastStore } from '../store/toast'
 import type {
@@ -99,8 +100,11 @@ const CountListCard: React.FC<{ title: string; headLabel: string; rows: { label:
   </div>
 )
 
+type StatisticsSection = 'overview' | 'report'
+
 export const StatisticsPage: React.FC = () => {
   const toast = useToastStore()
+  const [section, setSection] = useState<StatisticsSection>('overview')
   const [period, setPeriod] = useState<StatisticsPeriodKey>('day')
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
@@ -184,6 +188,35 @@ export const StatisticsPage: React.FC = () => {
           </p>
         </div>
 
+        {/* Section tabs */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
+          {(
+            [
+              { key: 'overview', label: 'Обзор' },
+              { key: 'report', label: 'Отчёт' },
+            ] as { key: StatisticsSection; label: string }[]
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setSection(key)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: `2px solid ${section === key ? 'var(--accent)' : 'transparent'}`,
+                color: section === key ? 'var(--accent)' : 'var(--text-secondary)',
+                padding: '6px 16px',
+                fontSize: 13,
+                fontWeight: section === key ? 600 : 400,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all 0.15s',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Period selector */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
           {PERIOD_ORDER.map((key) => (
@@ -242,7 +275,7 @@ export const StatisticsPage: React.FC = () => {
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Укажите начало и конец периода</p>
         )}
 
-        {!isLoading && data && (
+        {!isLoading && data && section === 'overview' && (
           <>
             {/* Timeline */}
             <div style={{ ...cardStyle(), marginBottom: 20 }}>
@@ -355,6 +388,10 @@ export const StatisticsPage: React.FC = () => {
               <CountListCard title="Файлы" headLabel="Файл" rows={filteredFileRows} />
             </div>
           </>
+        )}
+
+        {!isLoading && data && section === 'report' && (
+          <StatisticsReportPanel data={data} period={period} search={search} />
         )}
       </div>
     </AppLayout>
