@@ -252,12 +252,14 @@ async def get_correlation_graph(
     entity_alerts: Dict[str, Dict[str, Set[str]]] = {"ip": {}, "account": {}, "file": {}, "ioc": {}}
     alert_info: Dict[str, Tuple[str, str, datetime]] = {}
     alert_case_title: Dict[str, Optional[str]] = {}
+    alert_case_id: Dict[str, Optional[str]] = {}
     case_alert_ids: Dict[object, Set[str]] = {}
 
     for alert_id, title, description, alert_status, created_at, raw_event, case_id, case_title in rows:
         alert_id_str = str(alert_id)
         alert_info[alert_id_str] = (title, alert_status, created_at)
         alert_case_title[alert_id_str] = case_title
+        alert_case_id[alert_id_str] = str(case_id) if case_id is not None else None
         if case_id is not None:
             case_alert_ids.setdefault(case_id, set()).add(alert_id_str)
 
@@ -330,7 +332,10 @@ async def get_correlation_graph(
 
     for alert_id_str in included_alert_ids:
         title, alert_status, _ = alert_info[alert_id_str]
-        nodes.append(GraphNode(id=alert_id_str, kind="alert", label=title, status=alert_status))
+        nodes.append(GraphNode(
+            id=alert_id_str, kind="alert", label=title, status=alert_status,
+            case_id=alert_case_id.get(alert_id_str),
+        ))
 
     return CorrelationGraphResponse(
         period=StatisticsPeriod(start=period_start, end=period_end),

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CorrelationGraphEdge, CorrelationGraphNode, GraphNodeKind } from '../../types'
+import type { AlertStatus, CorrelationGraphEdge, CorrelationGraphNode, GraphNodeKind } from '../../types'
 import { ALERT_STATUS_COLORS, ALERT_STATUS_LABELS } from '../../types'
+import { GraphDetailsPanel, type PanelState } from './GraphDetailsPanel'
 
 interface CorrelationGraphProps {
   nodes: CorrelationGraphNode[]
@@ -23,6 +24,8 @@ const ENTITY_LABEL: Record<Exclude<GraphNodeKind, 'alert'>, string> = {
   file: 'Файл',
   ioc: 'IOC (домен/URL)',
 }
+
+type AlertGroup = 'in_case' | 'no_case'
 
 const ALERT_RADIUS = 9
 const CANVAS_W = 2400
@@ -118,18 +121,17 @@ function computeLayout(
   return positions
 }
 
-type EntityKind = Exclude<GraphNodeKind, 'alert'>
-
 export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges, onAlertClick }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(0.55)
   const [pan, setPan] = useState<Position>({ x: 40, y: 20 })
   const [isPanning, setIsPanning] = useState(false)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const [hiddenKinds, setHiddenKinds] = useState<Set<EntityKind>>(new Set())
+  const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
+  const [hiddenAlertGroups, setHiddenAlertGroups] = useState<Set<AlertGroup>>(new Set())
   const dragStartClient = useRef<Position>({ x: 0, y: 0 })
 
-  const toggleKind = (kind: EntityKind) => {
+  const toggleKind = (kind: GraphNodeKind) => {
     setHiddenKinds((prev) => {
       const next = new Set(prev)
       if (next.has(kind)) next.delete(kind)
@@ -137,6 +139,26 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
       return next
     })
   }
+
+  const toggleAlertGroup = (group: AlertGroup) => {
+    setHiddenAlertGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return next
+    })
+  }
+
+  const alertGroupCounts = useMemo(() => {
+    let inCase = 0
+    let noCase = 0
+    for (const n of nodes) {
+      if (n.kind !== 'alert') continue
+      if (n.case_id) inCase++
+      else noCase++
+    }
+    return { inCase, noCase }
+  }, [nodes])
 
   const nodeById = useMemo(() => {
     const map = new Map<string, CorrelationGraphNode>()
@@ -166,10 +188,173 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     [edges, hiddenKinds],
   )
   const visibleNodes = useMemo(() => {
-    if (hiddenKinds.size === 0) return nodes
+    if (hiddenKinds.size === 0 && hiddenAlertGroups.size === 0) return nodes
     const connectedAlertIds = new Set(visibleEdges.map((e) => e.target))
-    return nodes.filter((n) => (n.kind === 'alert' ? connectedAlertIds.has(n.id) : !hiddenKinds.has(n.kind)))
-  }, [nodes, visibleEdges, hiddenKinds])
+    return nodes.filter((n) => {
+      if (n.kind === 'alert') {
+        if (hiddenKinds.has('alert')) return false
+        const group: AlertGroup = n.case_id ? 'in_case' : 'no_case'
+        if (hiddenAlertGroups.has(group)) return false
+        // Entity-kind filters (ip/account/file/ioc) require the alert to still
+        // have a surviving edge; group/kind-only filters don't touch edges,
+        // so an isolated seed alert stays visible.
+        if (hiddenKinds.size === 0) return true
+        return connectedAlertIds.has(n.id)
+      }
+      return !hiddenKinds.has(n.kind)
+    })
+  }, [nodes, visibleEdges, hiddenKinds, hiddenAlertGroups])
+
+  // Alerts that correlate through the exact same set of entities are "similar"
+  // — collapsed into a single synthetic node so a cluster of near-duplicate
+  // alerts doesn't clutter the graph. Real alert ids are kept in
+  // groupMembersById for the details panel and edges are re-pointed at the
+  // group node (deduplicated per source/kind).
+  const { displayNodes, displayEdges, groupMembersById, groupEntityCountsById } = useMemo(() => {
+    const neighborsByAlertId = new Map<string, string[]>()
+    visibleEdges.forEach((e) => {
+      const arr = neighborsByAlertId.get(e.target) ?? []
+      arr.push(e.source)
+      neighborsByAlertId.set(e.target, arr)
+    })
+
+    const keyToAlertIds = new Map<string, string[]>()
+    visibleNodes.forEach((n) => {
+      if (n.kind !== 'alert') return
+      const neighbors = neighborsByAlertId.get(n.id)
+      if (!neighbors || neighbors.length === 0) return
+      const key = [...neighbors].sort().join('|')
+      const arr = keyToAlertIds.get(key) ?? []
+      arr.push(n.id)
+      keyToAlertIds.set(key, arr)
+    })
+
+    const groupIdByAlertId = new Map<string, string>()
+    const groupMembersById = new Map<string, string[]>()
+    const groupEntityCountsById = new Map<string, Record<string, number>>()
+    const groupNodeById = new Map<string, CorrelationGraphNode>()
+    const statusPriority: AlertStatus[] = ['escalated', 'triaged', 'new', 'dismissed']
+
+    for (const [key, ids] of keyToAlertIds) {
+      if (ids.length < 2) continue
+      const groupId = `group:${key}`
+      ids.forEach((id) => groupIdByAlertId.set(id, groupId))
+      groupMembersById.set(groupId, ids)
+
+      const entityCounts: Record<string, number> = { ip: 0, account: 0, file: 0, ioc: 0 }
+      key.split('|').forEach((entityId) => {
+        const kind = entityId.slice(0, entityId.indexOf(':'))
+        if (kind in entityCounts) entityCounts[kind] += 1
+      })
+      groupEntityCountsById.set(groupId, entityCounts)
+
+      const members = ids.map((id) => nodeById.get(id)).filter((m): m is CorrelationGraphNode => !!m)
+      const status = statusPriority.find((s) => members.some((m) => m.status === s))
+      const caseIds = new Set(members.map((m) => m.case_id ?? null))
+      groupNodeById.set(groupId, {
+        id: groupId,
+        kind: 'alert',
+        label: `${ids.length} похожих алертов`,
+        status,
+        degree: ids.length,
+        case_id: caseIds.size === 1 ? [...caseIds][0] ?? undefined : undefined,
+      })
+    }
+
+    const displayNodes: CorrelationGraphNode[] = []
+    const seenGroupIds = new Set<string>()
+    visibleNodes.forEach((n) => {
+      const groupId = n.kind === 'alert' ? groupIdByAlertId.get(n.id) : undefined
+      if (groupId) {
+        if (seenGroupIds.has(groupId)) return
+        seenGroupIds.add(groupId)
+        displayNodes.push(groupNodeById.get(groupId)!)
+        return
+      }
+      displayNodes.push(n)
+    })
+
+    const edgeKeySeen = new Set<string>()
+    const displayEdges: CorrelationGraphEdge[] = []
+    visibleEdges.forEach((e) => {
+      const target = groupIdByAlertId.get(e.target) ?? e.target
+      const key = `${e.source}->${target}:${e.kind}`
+      if (edgeKeySeen.has(key)) return
+      edgeKeySeen.add(key)
+      displayEdges.push({ source: e.source, target, kind: e.kind })
+    })
+
+    return { displayNodes, displayEdges, groupMembersById, groupEntityCountsById }
+  }, [visibleNodes, visibleEdges, nodeById])
+
+  // Which alerts mention each entity — used by the details panel's "mentions" table.
+  const mentionsByEntityId = useMemo(() => {
+    const map = new Map<string, string[]>()
+    visibleEdges.forEach((e) => {
+      const arr = map.get(e.source) ?? []
+      arr.push(e.target)
+      map.set(e.source, arr)
+    })
+    return map
+  }, [visibleEdges])
+
+  const [panel, setPanel] = useState<PanelState | null>(null)
+
+  // Group nodes are synthetic (not part of the force layout), so once their
+  // member alerts have positions, place the group at the members' centroid.
+  useEffect(() => {
+    setPositions((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const [groupId, memberIds] of groupMembersById) {
+        if (next[groupId]) continue
+        const memberPositions = memberIds.map((id) => prev[id]).filter((p): p is Position => !!p)
+        if (memberPositions.length === 0) continue
+        next[groupId] = {
+          x: memberPositions.reduce((s, p) => s + p.x, 0) / memberPositions.length,
+          y: memberPositions.reduce((s, p) => s + p.y, 0) / memberPositions.length,
+        }
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [groupMembersById])
+
+  // Chain size per node: how many nodes are reachable through displayed edges
+  // (union-find over the currently displayed graph). Edges inside a chain of
+  // 3+ nodes get a thicker stroke so correlated clusters stand out from
+  // one-off pairs.
+  const chainSizeByNode = useMemo(() => {
+    const parent = new Map<string, string>()
+    displayNodes.forEach((n) => parent.set(n.id, n.id))
+    const find = (x: string): string => {
+      let root = x
+      while (parent.get(root) !== root) root = parent.get(root)!
+      let cur = x
+      while (parent.get(cur) !== root) {
+        const next = parent.get(cur)!
+        parent.set(cur, root)
+        cur = next
+      }
+      return root
+    }
+    const union = (a: string, b: string) => {
+      const ra = find(a)
+      const rb = find(b)
+      if (ra !== rb) parent.set(ra, rb)
+    }
+    displayEdges.forEach((e) => {
+      if (parent.has(e.source) && parent.has(e.target)) union(e.source, e.target)
+    })
+    const sizeByRoot = new Map<string, number>()
+    displayNodes.forEach((n) => {
+      const root = find(n.id)
+      sizeByRoot.set(root, (sizeByRoot.get(root) ?? 0) + 1)
+    })
+    const result = new Map<string, number>()
+    displayNodes.forEach((n) => result.set(n.id, sizeByRoot.get(find(n.id)) ?? 1))
+    return result
+  }, [displayNodes, displayEdges])
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number): Position => {
@@ -236,7 +421,15 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
       dragMoved.current = false
       return
     }
-    if (node.kind === 'alert') onAlertClick(node.id)
+    if (node.kind === 'alert') {
+      if (groupMembersById.has(node.id)) {
+        setPanel({ kind: 'alert-group', groupId: node.id })
+      } else {
+        setPanel({ kind: 'alert', nodeId: node.id })
+      }
+    } else {
+      setPanel({ kind: 'entity', nodeId: node.id })
+    }
   }
 
   const handleZoomButton = (dir: 1 | -1) => {
@@ -250,7 +443,8 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
   const hoveredNode = hoveredId ? nodeById.get(hoveredId) : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+    <div style={{ display: 'flex', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, position: 'relative' }}>
       <div
         style={{
           display: 'flex',
@@ -286,36 +480,58 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginLeft: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Категории:</span>
-          <Legend
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Показывать:</span>
+          <FilterCheckbox
+            color="var(--text-secondary)"
+            label="Алерты"
+            shape="circle"
+            checked={!hiddenKinds.has('alert')}
+            onChange={() => toggleKind('alert')}
+          />
+          <FilterCheckbox
+            color="var(--accent)"
+            label={`В инциденте (${alertGroupCounts.inCase})`}
+            shape="circle"
+            outline="solid"
+            checked={!hiddenAlertGroups.has('in_case')}
+            onChange={() => toggleAlertGroup('in_case')}
+          />
+          <FilterCheckbox
+            color="var(--border)"
+            label={`Без инцидента (${alertGroupCounts.noCase})`}
+            shape="circle"
+            outline="dashed"
+            checked={!hiddenAlertGroups.has('no_case')}
+            onChange={() => toggleAlertGroup('no_case')}
+          />
+          <FilterCheckbox
             color={ENTITY_COLOR.ip}
             label="IP-адрес"
             shape="diamond"
-            active={!hiddenKinds.has('ip')}
-            onClick={() => toggleKind('ip')}
+            checked={!hiddenKinds.has('ip')}
+            onChange={() => toggleKind('ip')}
           />
-          <Legend
+          <FilterCheckbox
             color={ENTITY_COLOR.account}
             label="Учётная запись"
             shape="diamond"
-            active={!hiddenKinds.has('account')}
-            onClick={() => toggleKind('account')}
+            checked={!hiddenKinds.has('account')}
+            onChange={() => toggleKind('account')}
           />
-          <Legend
+          <FilterCheckbox
             color={ENTITY_COLOR.file}
             label="Файл"
             shape="diamond"
-            active={!hiddenKinds.has('file')}
-            onClick={() => toggleKind('file')}
+            checked={!hiddenKinds.has('file')}
+            onChange={() => toggleKind('file')}
           />
-          <Legend
+          <FilterCheckbox
             color={ENTITY_COLOR.ioc}
             label="IOC (домен/URL)"
             shape="diamond"
-            active={!hiddenKinds.has('ioc')}
-            onClick={() => toggleKind('ioc')}
+            checked={!hiddenKinds.has('ioc')}
+            onChange={() => toggleKind('ioc')}
           />
-          <Legend color="var(--text-secondary)" label="Алерт" shape="circle" />
           <Legend color={ALERT_STATUS_COLORS.escalated} label="Эскалирован" shape="circle" bold />
         </div>
       </div>
@@ -350,11 +566,13 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             height={CANVAS_H}
             style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}
           >
-            {visibleEdges.map((e, idx) => {
+            {displayEdges.map((e, idx) => {
               const s = positions[e.source]
               const t = positions[e.target]
               if (!s || !t) return null
               const dimmed = hoveredId != null && e.source !== hoveredId && e.target !== hoveredId
+              const chainSize = chainSizeByNode.get(e.source) ?? 1
+              const isChain = chainSize >= 3
               return (
                 <line
                   key={`${e.source}-${e.target}-${idx}`}
@@ -363,62 +581,107 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
                   x2={t.x}
                   y2={t.y}
                   stroke={dimmed ? 'var(--border)' : ENTITY_COLOR[e.kind]}
-                  strokeOpacity={dimmed ? 0.25 : 0.55}
-                  strokeWidth={1.4}
+                  strokeOpacity={dimmed ? 0.25 : isChain ? 0.75 : 0.55}
+                  strokeWidth={isChain ? 3 : 1.4}
                 />
               )
             })}
           </svg>
 
-          {visibleNodes.map((node) => {
+          {displayNodes.map((node) => {
             const pos = positions[node.id]
             if (!pos) return null
             const isAlert = node.kind === 'alert'
+            const isGroup = groupMembersById.has(node.id)
             const color = node.kind === 'alert'
               ? node.status
                 ? ALERT_STATUS_COLORS[node.status]
                 : 'var(--text-secondary)'
               : ENTITY_COLOR[node.kind]
-            const radius = isAlert ? ALERT_RADIUS : entityRadius(node.degree)
+            const radius = isAlert
+              ? isGroup
+                ? Math.min(22, ALERT_RADIUS + Math.sqrt(node.degree) * 2.5)
+                : ALERT_RADIUS
+              : entityRadius(node.degree)
             const isHovered = node.id === hoveredId
             const isEscalated = isAlert && node.status === 'escalated'
+            const inCase = isAlert && !!node.case_id
             const title = node.kind === 'alert'
-              ? node.label
+              ? isGroup
+                ? `${node.label} (нажмите, чтобы посмотреть список)`
+                : `${node.label}${inCase ? ' · в инциденте' : ' · без инцидента'}`
               : `${ENTITY_LABEL[node.kind]}: ${node.label} (${node.degree} алертов)`
 
+            const alertBorder = isEscalated
+              ? '3px solid var(--text-primary)'
+              : inCase
+                ? '2px solid var(--accent)'
+                : '2px dashed var(--border)'
+
             return (
-              <div
-                key={node.id}
-                onMouseEnter={() => setHoveredId(node.id)}
-                onMouseLeave={() => setHoveredId((prev) => (prev === node.id ? null : prev))}
-                onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                onClick={(e) => handleNodeClick(e, node)}
-                title={title}
-                style={{
-                  position: 'absolute',
-                  left: pos.x - radius,
-                  top: pos.y - radius,
-                  width: radius * 2,
-                  height: radius * 2,
-                  borderRadius: isAlert ? '50%' : 6,
-                  transform: isAlert ? undefined : 'rotate(45deg)',
-                  background: color,
-                  border: isEscalated ? '3px solid var(--text-primary)' : '3px solid transparent',
-                  boxSizing: 'border-box',
-                  opacity: hoveredId && !isHovered ? 0.35 : 1,
-                  boxShadow: isHovered ? `0 0 0 3px ${color}55` : '0 1px 4px rgba(0,0,0,0.4)',
-                  cursor: draggingId === node.id ? 'grabbing' : 'grab',
-                  zIndex: isHovered ? 20 : isAlert ? 5 : 8,
-                }}
-              />
+              <React.Fragment key={node.id}>
+                <div
+                  onMouseEnter={() => setHoveredId(node.id)}
+                  onMouseLeave={() => setHoveredId((prev) => (prev === node.id ? null : prev))}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                  onClick={(e) => handleNodeClick(e, node)}
+                  title={title}
+                  style={{
+                    position: 'absolute',
+                    left: pos.x - radius,
+                    top: pos.y - radius,
+                    width: radius * 2,
+                    height: radius * 2,
+                    borderRadius: isAlert ? '50%' : 6,
+                    transform: isAlert ? undefined : 'rotate(45deg)',
+                    background: color,
+                    border: isAlert ? alertBorder : '3px solid transparent',
+                    boxSizing: 'border-box',
+                    opacity: hoveredId && !isHovered ? 0.35 : 1,
+                    boxShadow: isHovered ? `0 0 0 3px ${color}55` : '0 1px 4px rgba(0,0,0,0.4)',
+                    cursor: draggingId === node.id ? 'grabbing' : 'grab',
+                    zIndex: isHovered ? 20 : isAlert ? 5 : 8,
+                  }}
+                />
+                {isGroup && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: pos.x + radius * 0.55,
+                      top: pos.y - radius * 0.95,
+                      minWidth: 15,
+                      height: 15,
+                      padding: '0 3px',
+                      borderRadius: 8,
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--text-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: 9,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      pointerEvents: 'none',
+                      zIndex: isHovered ? 21 : 7,
+                    }}
+                  >
+                    {node.degree}
+                  </div>
+                )}
+              </React.Fragment>
             )
           })}
 
-          {visibleNodes.map((node) => {
+          {displayNodes.map((node) => {
             const pos = positions[node.id]
             if (!pos) return null
             const isAlert = node.kind === 'alert'
-            const radius = isAlert ? ALERT_RADIUS : entityRadius(node.degree)
+            const isGroup = groupMembersById.has(node.id)
+            const radius = isAlert
+              ? isGroup
+                ? Math.min(22, ALERT_RADIUS + Math.sqrt(node.degree) * 2.5)
+                : ALERT_RADIUS
+              : entityRadius(node.degree)
             const isHovered = node.id === hoveredId
             const maxChars = isAlert ? 18 : 24
             const label = node.label.length > maxChars ? `${node.label.slice(0, maxChars)}…` : node.label
@@ -448,7 +711,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
             )
           })}
 
-          {visibleNodes.length === 0 && (
+          {displayNodes.length === 0 && (
             <div style={{ position: 'absolute', left: 40, top: 40, color: 'var(--text-secondary)', fontSize: 14 }}>
               Нет связей для отображения за выбранный период
             </div>
@@ -476,11 +739,69 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
           {hoveredNode.status && (
             <span style={{ color: 'var(--text-secondary)' }}> · {ALERT_STATUS_LABELS[hoveredNode.status]}</span>
           )}
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {' '}
+            · {hoveredNode.case_id ? 'в инциденте' : 'без инцидента'}
+          </span>
         </div>
       )}
     </div>
+    {panel && (
+      <GraphDetailsPanel
+        panel={panel}
+        onClose={() => setPanel(null)}
+        nodeById={nodeById}
+        groupMembersById={groupMembersById}
+        groupEntityCountsById={groupEntityCountsById}
+        mentionsByEntityId={mentionsByEntityId}
+        onOpenAlert={onAlertClick}
+      />
+    )}
+    </div>
   )
 }
+
+const FilterCheckbox: React.FC<{
+  color: string
+  label: string
+  shape: 'circle' | 'diamond'
+  checked: boolean
+  onChange: () => void
+  outline?: 'solid' | 'dashed'
+}> = ({ color, label, shape, checked, onChange, outline }) => (
+  <label
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 11,
+      color: 'var(--text-secondary)',
+      cursor: 'pointer',
+      userSelect: 'none',
+      opacity: checked ? 1 : 0.45,
+    }}
+  >
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      style={{ width: 12, height: 12, margin: 0, cursor: 'pointer', accentColor: color }}
+    />
+    <span
+      style={{
+        display: 'inline-block',
+        width: 10,
+        height: 10,
+        borderRadius: shape === 'circle' ? '50%' : 2,
+        transform: shape === 'diamond' ? 'rotate(45deg)' : undefined,
+        background: outline ? 'transparent' : color,
+        border: outline ? `2px ${outline} ${color}` : undefined,
+        boxSizing: 'border-box',
+      }}
+    />
+    {label}
+  </label>
+)
 
 const Legend: React.FC<{
   color: string

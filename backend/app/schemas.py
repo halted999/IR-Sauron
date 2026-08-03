@@ -969,6 +969,7 @@ class GraphNode(BaseModel):
     label: str
     status: Optional[AlertStatus] = None
     degree: int = 0
+    case_id: Optional[str] = None
 
 
 class GraphEdge(BaseModel):

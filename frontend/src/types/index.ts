@@ -475,6 +475,7 @@ export interface CorrelationGraphNode {
   label: string
   status?: AlertStatus
   degree: number
+  case_id?: string | null
 }
 
 export interface CorrelationGraphEdge {
