@@ -1,8 +1,11 @@
 # IR-Sauron
+<img width="543" height="544" alt="image" src="https://github.com/user-attachments/assets/303726ef-2fab-4bac-89e9-656fac24bf8d" />
 
 IR-Sauron — платформа для команды реагирования на инциденты информационной безопасности (SOC/IR): от первичного приёма алертов до подтверждённого и задокументированного инцидента. Она покрывает весь цикл расследования — очередь триажа алертов, эскалацию в инцидент (в том числе массовую), реконструкцию графа связей между событиями атаки, разметку по MITRE ATT&CK с автоматическим повышением критичности и формирование итогового отчёта.
 
 Помимо самого расследования, платформа даёт инструменты для поиска закономерностей: корреляционный граф в разделе «Анализ», сводную статистику по алертам и KQL-подобный язык запросов, одинаково работающий в разделах «Алерты», «Инциденты», «Статистика» и «Анализ». Роли и права, журнал действий, интеграция с внешними источниками алертов (Elastic, TheHive, JSON API, IMAP, файлы) и демо-режим с синтетическими данными настраиваются в панели администрирования.
+
+Вход при первой установке admin /admin
 
 ## Алерты
 
@@ -132,3 +135,56 @@ IR-Sauron — платформа для команды реагирования 
 ## Темы оформления
 
 **Светлая / Тёмная / Саурон / Трандуил** — переключаются в профиле пользователя. «Саурон» и «Трандуил» — тематические пасхалки: в «Сауроне» статус инцидента в списке и карточке отображается иконкой Ока, в «Трандуиле» — иконкой листа. У каждой темы своя надпись-водяной знак в верхнем меню и свой favicon вкладки браузера.
+## Стек технологий
+
+- **Backend**: FastAPI (Python), SQLAlchemy (async), PostgreSQL, Redis, MinIO (S3-совместимое хранилище артефактов), WebSocket для совместной работы в реальном времени.
+- **Frontend**: React + TypeScript, Vite, Zustand.
+- **Инфраструктура**: Docker Compose, Nginx, опционально Keycloak/OIDC для SSO.
+
+## Быстрый старт
+
+```bash
+cp .env.example .env
+make dev     # dev-стек с hot-reload
+# либо
+make up      # production-стек
+```
+
+Frontend будет доступен на `http://localhost:3000` (dev) или через Nginx на `http://localhost` (production).
+
+## Требования к установке
+
+- **Docker** 24+ и **Docker Compose** v2 (команда `docker compose`, а не устаревший отдельный `docker-compose`).
+- Linux-хост (проверено на Debian/Ubuntu) или Docker Desktop (Windows/macOS) для локальной разработки.
+- Свободные порты **80** и **443** на хосте (Nginx) — либо переназначьте их в `docker-compose.yml`.
+- Ориентировочно не менее **2 vCPU** и **4 ГБ RAM**, **10 ГБ** свободного места на диске — для тестового стенда с небольшим объёмом данных; под боевую нагрузку ресурсы стоит считать исходя из реального объёма алертов и дел.
+- TLS-сертификат в `nginx/ssl/cert.pem` и `nginx/ssl/key.pem` — по умолчанию самоподписанный для разработки, для продакшена замените на сертификат от доверенного CA.
+- Заполненный `.env` (скопируйте из `.env.example`): как минимум пароли PostgreSQL/Redis/MinIO и `SECRET_KEY` для подписи JWT.
+- Клиент `pg_dump`/`pg_restore` внутри backend-образа зафиксирован на версии **PostgreSQL 16** (через репозиторий PGDG) — под версию сервера `postgres:16-alpine` из docker-compose. При восстановлении бэкапа базы данными снаружи контейнера используйте клиент той же версии, иначе `pg_restore` может завершиться с ошибкой несовместимости.
+
+<img width="2339" height="1257" alt="image" src="https://github.com/user-attachments/assets/8b407217-0dcb-403c-8302-0ad2653ebc38" />
+<img width="2363" height="1268" alt="image" src="https://github.com/user-attachments/assets/e24c34d3-c179-483c-9279-5bfdad9283c7" />
+<img width="2348" height="1265" alt="image" src="https://github.com/user-attachments/assets/e9db1c0d-0f29-4374-a47f-1acd0a8a0e56" />
+<img width="2366" height="1236" alt="image" src="https://github.com/user-attachments/assets/f6f03904-bf4f-4148-8dd9-c1307dd2f903" />
+<img width="2375" height="1221" alt="image" src="https://github.com/user-attachments/assets/151af8aa-4842-4bd5-8176-0c9f0be00bdc" />
+<img width="2374" height="1261" alt="image" src="https://github.com/user-attachments/assets/44755e32-008a-42a3-b911-279444a262f2" />
+<img width="2351" height="1251" alt="image" src="https://github.com/user-attachments/assets/918cf9ae-3170-4e3a-96ab-4940ea1b3a35" />
+<img width="2359" height="1257" alt="image" src="https://github.com/user-attachments/assets/46413e04-8fd9-42aa-bae1-043aca1da514" />
+<img width="2362" height="1233" alt="image" src="https://github.com/user-attachments/assets/19a4cfc8-6df2-4af4-a792-f941b4f8e4d2" />
+<img width="2345" height="1251" alt="image" src="https://github.com/user-attachments/assets/cbffd62f-d7cb-47a5-a7d7-9404381e9915" />
+<img width="2356" height="652" alt="image" src="https://github.com/user-attachments/assets/f82d5f3e-02e7-4b3b-9865-fb70870ddd46" />
+<img width="2382" height="1003" alt="image" src="https://github.com/user-attachments/assets/eb541e2b-ae90-406d-b90d-efb61fe28657" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
