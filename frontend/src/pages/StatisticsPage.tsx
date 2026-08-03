@@ -106,6 +106,7 @@ export const StatisticsPage: React.FC = () => {
   const [customEnd, setCustomEnd] = useState<string>('')
   const [data, setData] = useState<StatisticsOverview | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (period === 'custom' && (!customStart || !customEnd)) return
@@ -157,6 +158,20 @@ export const StatisticsPage: React.FC = () => {
     () => (data?.top_accounts ?? []).map((v: ValueCount) => ({ label: v.value, count: v.count })),
     [data],
   )
+  const fileRows = useMemo(
+    () => (data?.top_files ?? []).map((v: ValueCount) => ({ label: v.value, count: v.count })),
+    [data],
+  )
+
+  const searchTerm = search.trim().toLowerCase()
+  const filterBySearch = (rows: { label: string; count: number }[]) =>
+    searchTerm ? rows.filter((r) => r.label.toLowerCase().includes(searchTerm)) : rows
+
+  const filteredUrlRows = useMemo(() => filterBySearch(urlRows), [urlRows, searchTerm])
+  const filteredExtIpRows = useMemo(() => filterBySearch(extIpRows), [extIpRows, searchTerm])
+  const filteredIntIpRows = useMemo(() => filterBySearch(intIpRows), [intIpRows, searchTerm])
+  const filteredAccountRows = useMemo(() => filterBySearch(accountFromAlertsRows), [accountFromAlertsRows, searchTerm])
+  const filteredFileRows = useMemo(() => filterBySearch(fileRows), [fileRows, searchTerm])
 
   return (
     <AppLayout>
@@ -196,6 +211,17 @@ export const StatisticsPage: React.FC = () => {
               <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} style={{ width: 150 }} />
             </div>
           )}
+        </div>
+
+        {/* Search across value tables (URL, IP, files, accounts) */}
+        <div style={{ marginBottom: 20 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по URL, IP-адресу, файлу или учётной записи..."
+            style={{ maxWidth: 420 }}
+          />
         </div>
 
         {!isLoading && data && (
@@ -320,12 +346,13 @@ export const StatisticsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* URL / IP breakdowns */}
+            {/* URL / IP / file breakdowns */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
-              <CountListCard title="Топ URL" headLabel="URL" rows={urlRows} />
-              <CountListCard title="Внешние IP-адреса" headLabel="IP-адрес" rows={extIpRows} />
-              <CountListCard title="Внутренние IP-адреса" headLabel="IP-адрес" rows={intIpRows} />
-              <CountListCard title="Учётные записи в алертах" headLabel="Учётная запись" rows={accountFromAlertsRows} />
+              <CountListCard title="Топ URL" headLabel="URL" rows={filteredUrlRows} />
+              <CountListCard title="Внешние IP-адреса" headLabel="IP-адрес" rows={filteredExtIpRows} />
+              <CountListCard title="Внутренние IP-адреса" headLabel="IP-адрес" rows={filteredIntIpRows} />
+              <CountListCard title="Учётные записи в алертах" headLabel="Учётная запись" rows={filteredAccountRows} />
+              <CountListCard title="Файлы" headLabel="Файл" rows={filteredFileRows} />
             </div>
           </>
         )}

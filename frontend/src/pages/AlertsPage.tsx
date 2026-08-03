@@ -21,16 +21,20 @@ import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { Pagination } from '../components/ui/Pagination'
+import { MultiSelectDropdown } from '../components/ui/MultiSelectDropdown'
 import type { AlertsParams } from '../api/alerts'
 import type { Alert, AlertStatus, CaseSeverity, CreateAlertData } from '../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../types'
+
+const STATUS_OPTIONS = (Object.entries(ALERT_STATUS_LABELS) as [AlertStatus, string][]).map(
+  ([value, label]) => ({ value, label }),
+)
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const STATUS_COLOR: Record<AlertStatus, string> = {
@@ -38,6 +42,7 @@ const STATUS_COLOR: Record<AlertStatus, string> = {
   triaged: 'yellow',
   escalated: 'green',
   dismissed: 'gray',
+  archived: 'gray',
 }
 
 export const AlertsPage: React.FC = () => {
@@ -46,7 +51,7 @@ export const AlertsPage: React.FC = () => {
   const toast = useToastStore()
   const { alerts, total, isLoading, fetchAlerts, addAlert, updateAlertInStore, removeAlertsFromStore } = useAlertStore()
 
-  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterStatuses, setFilterStatuses] = useState<Set<AlertStatus>>(new Set())
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -83,7 +88,7 @@ export const AlertsPage: React.FC = () => {
       skip: (page - 1) * pageSize,
       limit: pageSize,
     }
-    if (filterStatus !== 'all') params.status = filterStatus as AlertStatus
+    if (filterStatuses.size > 0) params.status = [...filterStatuses]
     if (filterSeverity !== 'all') params.severity = filterSeverity as CaseSeverity
     return params
   }
@@ -91,10 +96,11 @@ export const AlertsPage: React.FC = () => {
   useEffect(() => {
     fetchAlerts(buildParams()).catch(() => toast.error('Ошибка загрузки алертов'))
     setSelectedIds(new Set())
-  }, [filterStatus, filterSeverity, showArchive, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatuses, filterSeverity, showArchive, page, pageSize])
 
-  const handleFilterStatusChange = (v: string) => {
-    setFilterStatus(v)
+  const handleFilterStatusesChange = (next: Set<string>) => {
+    setFilterStatuses(next as Set<AlertStatus>)
     setPage(1)
   }
 
@@ -167,7 +173,7 @@ export const AlertsPage: React.FC = () => {
   }
 
   const filteredAlerts = alerts.filter((a) => {
-    if (filterStatus !== 'all' && a.status !== filterStatus) return false
+    if (filterStatuses.size > 0 && !filterStatuses.has(a.status)) return false
     if (filterSeverity !== 'all' && a.severity !== filterSeverity) return false
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase()
@@ -376,18 +382,13 @@ export const AlertsPage: React.FC = () => {
             <label style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap', margin: 0 }}>
               Статус:
             </label>
-            <select
-              value={filterStatus}
-              onChange={(e) => handleFilterStatusChange(e.target.value)}
-              style={{ width: 150 }}
-            >
-              <option value="all">Все статусы</option>
-              {Object.entries(ALERT_STATUS_LABELS).map(([val, label]) => (
-                <option key={val} value={val}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <MultiSelectDropdown
+              options={STATUS_OPTIONS}
+              selected={filterStatuses}
+              onChange={handleFilterStatusesChange}
+              placeholder="Все статусы"
+              width={170}
+            />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap', margin: 0 }}>
@@ -621,7 +622,7 @@ export const AlertsPage: React.FC = () => {
                           ) : (
                             <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
                           )
-                        ) : a.status === 'dismissed' ? (
+                        ) : a.status === 'dismissed' || a.status === 'archived' ? (
                           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
                         ) : (
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

@@ -7,7 +7,7 @@ import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 import { useToastStore } from '../store/toast'
 import { useTimelineWS } from '../hooks/useTimelineWS'
-import { archiveCase, deleteCase, exportCase, unarchiveCase, updateCase } from '../api/cases'
+import { archiveCase, deleteCase, detachCase, unarchiveCase, updateCase } from '../api/cases'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { createEvent, updateEvent } from '../api/events'
 import { getBranchComments, createBranchComment } from '../api/branches'
@@ -19,6 +19,9 @@ import { EventDetail } from '../components/Events/EventDetail'
 import { IOCPanel } from '../components/Cases/IOCPanel'
 import { CaseReportPanel } from '../components/Cases/CaseReportPanel'
 import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
+import { AssignLeadDropdown } from '../components/Cases/AssignLeadDropdown'
+import { AttachCaseModal } from '../components/Cases/AttachCaseModal'
+import { AttachedIncidentsPanel } from '../components/Cases/AttachedIncidentsPanel'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
@@ -30,14 +33,13 @@ import {
   CASE_STATUS_LABELS, getCaseStatusLabel, getCaseStatusIconVariant,
 } from '../types'
 
-type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts' | 'report'
+type ActiveTab = 'table' | 'graph' | 'iocs' | 'alerts' | 'incidents' | 'report'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const STATUS_COLOR: Record<CaseStatus, string> = {
@@ -103,12 +105,14 @@ export const CasePage: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [showAttachModal, setShowAttachModal] = useState(false)
+  const [isDetaching, setIsDetaching] = useState<string | null>(null)
   const rightPanelWidth = 320
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
 
@@ -164,6 +168,34 @@ export const CasePage: React.FC = () => {
     }
   }
 
+  const handleAssignLead = async (userId: string) => {
+    if (!currentCase) return
+    setIsAssigning(true)
+    try {
+      const updated = await updateCase(currentCase.id, { ir_lead_id: userId })
+      setCurrentCase(updated)
+      toast.success('Ответственный инцидента назначен')
+    } catch {
+      toast.error('Ошибка назначения ответственного')
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  const handleDetach = async (targetCaseId: string) => {
+    if (!currentCase) return
+    setIsDetaching(targetCaseId)
+    try {
+      await detachCase(targetCaseId)
+      await fetchCase(currentCase.id)
+      toast.success('Инцидент отсоединён')
+    } catch {
+      toast.error('Ошибка отсоединения инцидента')
+    } finally {
+      setIsDetaching(null)
+    }
+  }
+
   const handleTitleStartEdit = () => {
     if (!currentCase) return
     setTitleDraft(currentCase.title)
@@ -208,25 +240,6 @@ export const CasePage: React.FC = () => {
       const newEvent = await createEvent(branchId, data)
       addEvent(newEvent)
       toast.success('Событие добавлено')
-    }
-  }
-
-  const handleExport = async () => {
-    if (!caseId) return
-    setIsExporting(true)
-    try {
-      const blob = await exportCase(caseId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `case-${caseId}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success('Экспорт завершён')
-    } catch {
-      toast.error('Ошибка экспорта')
-    } finally {
-      setIsExporting(false)
     }
   }
 
@@ -293,6 +306,8 @@ export const CasePage: React.FC = () => {
     user?.role === 'admin' ||
     user?.role === 'ir_lead' ||
     user?.role === 'investigator'
+
+  const isAttachedCase = !!currentCase.parent_case_id || (currentCase.attached_cases?.length ?? 0) > 0
 
   const statusIconVariant =
     theme === 'sauron' || theme === 'elves' ? getCaseStatusIconVariant(currentCase.status) : null
@@ -460,9 +475,18 @@ export const CasePage: React.FC = () => {
 
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <Button variant="secondary" size="sm" onClick={handleExport} isLoading={isExporting}>
-                Экспорт JSON
-              </Button>
+              {canEdit && (
+                <AssignLeadDropdown
+                  currentLeadName={currentCase.ir_lead?.full_name || currentCase.ir_lead?.username}
+                  isLoading={isAssigning}
+                  onAssign={handleAssignLead}
+                />
+              )}
+              {canEdit && !currentCase.parent_case_id && (
+                <Button variant="secondary" size="sm" onClick={() => setShowAttachModal(true)}>
+                  Присоединить
+                </Button>
+              )}
               {canEdit && (
                 <Button variant="secondary" size="sm" onClick={handleToggleArchive} isLoading={isArchiving}>
                   {currentCase.is_archived ? 'Разархивировать' : 'Архивировать'}
@@ -490,6 +514,9 @@ export const CasePage: React.FC = () => {
                 { key: 'graph', label: 'Граф' },
                 { key: 'iocs', label: `IOC (${iocs.length})` },
                 { key: 'alerts', label: 'Алерты' },
+                ...(isAttachedCase
+                  ? [{ key: 'incidents' as ActiveTab, label: 'Инциденты' }]
+                  : []),
               ] as { key: ActiveTab; label: string }[]
             ).map(({ key, label }) => (
               <button
@@ -538,7 +565,19 @@ export const CasePage: React.FC = () => {
 
             {activeTab === 'iocs' && <IOCPanel iocs={iocs} caseId={currentCase.id} />}
 
-            {activeTab === 'alerts' && <CaseAlertsPanel caseId={currentCase.id} />}
+            {activeTab === 'alerts' && (
+              <CaseAlertsPanel caseId={currentCase.id} attachedCases={currentCase.attached_cases} />
+            )}
+
+            {activeTab === 'incidents' && (
+              <AttachedIncidentsPanel
+                currentCase={currentCase}
+                canEdit={canEdit}
+                isDetaching={isDetaching}
+                onNavigate={(id) => navigate(`/cases/${id}`)}
+                onDetach={handleDetach}
+              />
+            )}
 
             {activeTab === 'report' && (
               <CaseReportPanel
@@ -638,6 +677,16 @@ export const CasePage: React.FC = () => {
         isLoading={isDeleting}
         requireReason
         reasonLabel="Причина удаления"
+      />
+
+      <AttachCaseModal
+        isOpen={showAttachModal}
+        onClose={() => setShowAttachModal(false)}
+        currentCase={currentCase}
+        onAttached={(updated) => {
+          setCurrentCase(updated)
+          toast.success('Инцидент присоединён')
+        }}
       />
     </AppLayout>
   )

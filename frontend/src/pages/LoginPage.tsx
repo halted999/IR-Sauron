@@ -2,16 +2,24 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/auth'
 import { Button } from '../components/ui/Button'
+import { getPing } from '../api/ping'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
   const { login, isLoading, error, accessToken, clearError } = useAuthStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [demoModeEnabled, setDemoModeEnabled] = useState(false)
 
   useEffect(() => {
     if (accessToken) navigate('/alerts', { replace: true })
   }, [accessToken, navigate])
+
+  useEffect(() => {
+    getPing()
+      .then((res) => setDemoModeEnabled(res.demo_mode_enabled))
+      .catch(() => {})
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -142,6 +150,23 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
         </div>
+
+        {demoModeEnabled && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: '10px 14px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              textAlign: 'center',
+            }}
+          >
+            Демо-режим включён — используйте <strong>demo / demo</strong> для входа
+          </div>
+        )}
 
         <p
           style={{

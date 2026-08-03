@@ -233,7 +233,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
     const groupMembersById = new Map<string, string[]>()
     const groupEntityCountsById = new Map<string, Record<string, number>>()
     const groupNodeById = new Map<string, CorrelationGraphNode>()
-    const statusPriority: AlertStatus[] = ['escalated', 'triaged', 'new', 'dismissed']
+    const statusPriority: AlertStatus[] = ['escalated', 'triaged', 'new', 'dismissed', 'archived']
 
     for (const [key, ids] of keyToAlertIds) {
       if (ids.length < 2) continue

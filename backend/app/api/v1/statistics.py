@@ -185,6 +185,7 @@ async def get_statistics_overview(
     external_ip_counter: "Counter[str]" = Counter()
     internal_ip_counter: "Counter[str]" = Counter()
     account_counter: "Counter[str]" = Counter()
+    file_counter: "Counter[str]" = Counter()
     created_ats: List[datetime] = []
 
     for title, description, alert_status, created_at, raw_event in rows:
@@ -204,6 +205,9 @@ async def get_statistics_overview(
         for account in resolve_accounts(title, description, raw_event):
             account_counter[account] += 1
 
+        for file_name in resolve_files(title, description, raw_event):
+            file_counter[file_name] += 1
+
     granularity = _timeline_granularity(period_start, period_end)
 
     return StatisticsResponse(
@@ -219,6 +223,7 @@ async def get_statistics_overview(
         top_external_ips=_top(external_ip_counter),
         top_internal_ips=_top(internal_ip_counter),
         top_accounts=_top(account_counter),
+        top_files=_top(file_counter),
     )
 
 

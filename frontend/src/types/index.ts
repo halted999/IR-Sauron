@@ -4,14 +4,15 @@ export type UserRole =
   | 'investigator'
   | 'observer'
   | 'external_contractor'
+  | 'demo'
 
 export type CaseStatus = 'open' | 'in_progress' | 'confirmed' | 'rejected'
 
-export type CaseSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
+export type CaseSeverity = 'critical' | 'high' | 'medium' | 'low'
 
 export type BranchStatus = 'hypothesis' | 'confirmed' | 'rejected'
 
-export type AlertStatus = 'new' | 'triaged' | 'escalated' | 'dismissed'
+export type AlertStatus = 'new' | 'triaged' | 'escalated' | 'dismissed' | 'archived'
 
 export type EventType =
   | 'attacker_action'
@@ -112,6 +113,7 @@ export interface Case {
   status: CaseStatus
   severity: CaseSeverity
   ir_lead_id?: string
+  ir_lead?: User
   classification?: string
   incident_discovered_at?: string
   incident_started_at?: string
@@ -147,9 +149,26 @@ export interface Case {
   approval_notes?: string
   is_archived?: boolean
   archived_at?: string
+  parent_case_id?: string
+  attach_reason?: string
+  parent_case?: CaseSummary
+  attached_cases?: CaseSummary[]
   created_at: string
   updated_at: string
   participants?: CaseParticipant[]
+}
+
+export interface CaseSummary {
+  id: string
+  title: string
+  status: CaseStatus
+  severity: CaseSeverity
+  ir_lead_id?: string
+  classification?: string
+  incident_discovered_at?: string
+  attach_reason?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface CaseParticipant {
@@ -340,6 +359,7 @@ export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
   triaged: 'В работе',
   escalated: 'Эскалирован',
   dismissed: 'Отклонён',
+  archived: 'В архиве',
 }
 
 export const ALERT_STATUS_COLORS: Record<AlertStatus, string> = {
@@ -347,6 +367,7 @@ export const ALERT_STATUS_COLORS: Record<AlertStatus, string> = {
   triaged: '#d29922',
   escalated: '#3fb950',
   dismissed: '#8b949e',
+  archived: '#6e7681',
 }
 
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
@@ -387,7 +408,6 @@ export const CASE_SEVERITY_LABELS: Record<CaseSeverity, string> = {
   high: 'Высокий',
   medium: 'Средний',
   low: 'Низкий',
-  informational: 'Информационный',
 }
 
 export const IOC_TYPE_LABELS: Record<string, string> = {
@@ -406,6 +426,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   investigator: 'Аналитик',
   observer: 'Наблюдатель',
   external_contractor: 'Внешний подрядчик',
+  demo: 'Демо-пользователь',
 }
 
 // ─── Statistics ─────────────────────────────────────────────────────────────
@@ -465,6 +486,7 @@ export interface StatisticsOverview {
   top_external_ips: ValueCount[]
   top_internal_ips: ValueCount[]
   top_accounts: ValueCount[]
+  top_files: ValueCount[]
 }
 
 export type GraphNodeKind = 'alert' | 'ip' | 'account' | 'file' | 'ioc'

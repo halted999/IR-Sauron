@@ -113,6 +113,8 @@ async def _apply(
 ) -> None:
     if rule.action == AlertRuleAction.suppress:
         alert.status = AlertStatus.dismissed
+    elif rule.action == AlertRuleAction.archive:
+        alert.status = AlertStatus.archived
     elif rule.action == AlertRuleAction.assign_tag:
         if rule.tag_value and rule.tag_value not in alert.tags:
             alert.tags = [*alert.tags, rule.tag_value]

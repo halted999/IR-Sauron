@@ -40,7 +40,7 @@ _TEXT_SEVERITY_ALIASES = {
     "high": CaseSeverity.high, "высокий": CaseSeverity.high,
     "medium": CaseSeverity.medium, "средний": CaseSeverity.medium,
     "low": CaseSeverity.low, "низкий": CaseSeverity.low,
-    "informational": CaseSeverity.informational, "информационный": CaseSeverity.informational,
+    "informational": CaseSeverity.low, "информационный": CaseSeverity.low,
 }
 
 

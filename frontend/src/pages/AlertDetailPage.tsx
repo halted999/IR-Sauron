@@ -25,7 +25,6 @@ const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const STATUS_COLOR: Record<AlertStatus, string> = {
@@ -33,6 +32,7 @@ const STATUS_COLOR: Record<AlertStatus, string> = {
   triaged: 'yellow',
   escalated: 'green',
   dismissed: 'gray',
+  archived: 'gray',
 }
 
 // log.level severity scale, anchored exactly as requested: informational is
@@ -350,7 +350,7 @@ export const AlertDetailPage: React.FC = () => {
                       Открыть инцидент
                     </Button>
                   )
-                ) : alert.status === 'dismissed' ? null : (
+                ) : alert.status === 'dismissed' || alert.status === 'archived' ? null : (
                   <>
                     <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
                       Эскалировать

@@ -1,7 +1,7 @@
 import apiClient from './client'
 import type { CaseSeverity } from '../types'
 
-export type AlertRuleAction = 'suppress' | 'escalate' | 'assign_tag'
+export type AlertRuleAction = 'suppress' | 'escalate' | 'assign_tag' | 'archive'
 
 export interface AlertRule {
   id: string

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as app_config
 from app.core.audit import log_action
+from app.core.auth import get_password_hash
 from app.core.crypto import decrypt_bytes, encrypt_bytes
 from app.core.maintenance import set_last_restore_error, set_maintenance, set_restore_progress
 from app.core.rbac import (
@@ -24,9 +25,11 @@ from app.core.rbac import (
 from app.database import AsyncSessionLocal, engine, get_db
 from app.models import AppSettings, AuditLog, Case, RolePermission, User, UserRole
 from app.schemas import (
-    AppSettingsResponse, AppSettingsUpdate, AuditLogEntryDetailed, BackupRequest, RolePermissionItem,
-    RolePermissionsResponse, UpdateRolePermissionsRequest,
+    AppSettingsResponse, AppSettingsUpdate, AuditLogEntryDetailed, BackupRequest, DemoModeClearRequest,
+    DemoModeClearResult, DemoModeSeedCountResult, DemoModeSeedDataResult, DemoModeStatus,
+    DemoModeToggleRequest, RolePermissionItem, RolePermissionsResponse, UpdateRolePermissionsRequest,
 )
+from app.services import demo_seed
 
 _RESTORE_CONFIRM_PHRASE = "ВОССТАНОВИТЬ"
 
@@ -406,3 +409,134 @@ async def update_role_permissions(
 
     await db.flush()
     return await _load_role_permissions(db)
+
+
+# ─── Demo mode ─────────────────────────────────────────────────────────────
+# All endpoints below are require_admin (non-delegable), same reasoning as
+# the role-permission matrix above — clear-data is irreversible and toggling
+# demo mode manages a live login account, neither should be loosen-able via
+# the permission matrix.
+
+_CLEAR_CONFIRM_PHRASE = "УДАЛИТЬ ВСЁ"
+_DEMO_USERNAME = "demo"
+
+
+@router.get("/demo-mode/status", response_model=DemoModeStatus)
+async def get_demo_mode_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+) -> DemoModeStatus:
+    row = await _get_or_create_settings(db)
+    return DemoModeStatus(enabled=row.demo_mode_enabled)
+
+
+@router.post("/demo-mode/toggle", response_model=DemoModeStatus)
+async def toggle_demo_mode(
+    payload: DemoModeToggleRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> DemoModeStatus:
+    row = await _get_or_create_settings(db)
+    row.demo_mode_enabled = payload.enabled
+
+    result = await db.execute(select(User).where(User.username == _DEMO_USERNAME))
+    demo_user = result.scalar_one_or_none()
+
+    if payload.enabled:
+        if demo_user is None:
+            demo_user = User(
+                id=uuid.uuid4(),
+                username=_DEMO_USERNAME,
+                email="demo@ir-sauron.local",
+                full_name="Демо-пользователь",
+                hashed_password=get_password_hash(_DEMO_USERNAME),
+                role=UserRole.demo,
+                is_active=True,
+            )
+            db.add(demo_user)
+        else:
+            demo_user.role = UserRole.demo
+            demo_user.is_active = True
+            demo_user.hashed_password = get_password_hash(_DEMO_USERNAME)
+    elif demo_user is not None:
+        # Turning demo mode off must also disable the account itself —
+        # otherwise it's still a live demo/demo login, just no longer
+        # advertised on the login page.
+        demo_user.is_active = False
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="update", object_type="settings", object_id="demo_mode",
+        details={"enabled": payload.enabled}, request=request,
+    )
+
+    await db.flush()
+    return DemoModeStatus(enabled=row.demo_mode_enabled)
+
+
+@router.post("/demo-mode/seed-data", response_model=DemoModeSeedDataResult)
+async def seed_demo_data_endpoint(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> DemoModeSeedDataResult:
+    cases_created, alerts_created = await demo_seed.seed_demo_data(db, current_user.id)
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="create", object_type="settings", object_id="demo_mode_seed",
+        details={"cases_created": cases_created, "alerts_created": alerts_created}, request=request,
+    )
+    await db.flush()
+    return DemoModeSeedDataResult(cases_created=cases_created, alerts_created=alerts_created)
+
+
+@router.post("/demo-mode/seed-event-sources", response_model=DemoModeSeedCountResult)
+async def seed_demo_event_sources_endpoint(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> DemoModeSeedCountResult:
+    created = await demo_seed.seed_demo_event_sources(db, current_user.id)
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="create", object_type="event_source", object_id="demo_mode_seed",
+        details={"created": created}, request=request,
+    )
+    await db.flush()
+    return DemoModeSeedCountResult(created=created)
+
+
+@router.post("/demo-mode/seed-audit-log", response_model=DemoModeSeedCountResult)
+async def seed_demo_audit_log_endpoint(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+) -> DemoModeSeedCountResult:
+    # Not wrapped in log_action itself — seeding the audit log with a "we
+    # just seeded the audit log" entry would be a little too on the nose,
+    # and every seeded row is already tagged {"demo": True}.
+    created = await demo_seed.seed_demo_audit_log(db)
+    await db.flush()
+    return DemoModeSeedCountResult(created=created)
+
+
+@router.post("/demo-mode/clear-data", response_model=DemoModeClearResult)
+async def clear_demo_data_endpoint(
+    payload: DemoModeClearRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+) -> DemoModeClearResult:
+    if payload.confirm.strip() != _CLEAR_CONFIRM_PHRASE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Введите фразу подтверждения «{_CLEAR_CONFIRM_PHRASE}»",
+        )
+    alerts_deleted, cases_deleted = await demo_seed.clear_all_alerts_and_cases(db)
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="purge", object_type="case", object_id="all",
+        details={"alerts_deleted": alerts_deleted, "cases_deleted": cases_deleted}, request=request,
+    )
+    await db.flush()
+    return DemoModeClearResult(alerts_deleted=alerts_deleted, cases_deleted=cases_deleted)

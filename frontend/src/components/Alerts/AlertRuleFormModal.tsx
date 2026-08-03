@@ -306,37 +306,20 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
           </div>
         )}
 
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 6 }}>
-          Действие
-        </div>
-        <div style={{ display: 'flex', gap: 20 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input
-              type="radio"
-              checked={form.action === 'suppress'}
-              onChange={() => setField('action', 'suppress')}
-              style={{ width: 'auto' }}
-            />
-            <span style={{ fontSize: 13 }}>Подавлять (отклонять)</span>
+        <div>
+          <label htmlFor="rule-action" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+            Действие
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input
-              type="radio"
-              checked={form.action === 'escalate'}
-              onChange={() => setField('action', 'escalate')}
-              style={{ width: 'auto' }}
-            />
-            <span style={{ fontSize: 13 }}>Эскалировать в инцидент</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input
-              type="radio"
-              checked={form.action === 'assign_tag'}
-              onChange={() => setField('action', 'assign_tag')}
-              style={{ width: 'auto' }}
-            />
-            <span style={{ fontSize: 13 }}>Назначить тег</span>
-          </label>
+          <select
+            id="rule-action"
+            value={form.action}
+            onChange={(e) => setField('action', e.target.value as AlertRuleAction)}
+          >
+            <option value="suppress">Подавлять (отклонять)</option>
+            <option value="escalate">Эскалировать в инцидент</option>
+            <option value="assign_tag">Назначить тег</option>
+            <option value="archive">В архив</option>
+          </select>
         </div>
 
         {form.action === 'assign_tag' && (

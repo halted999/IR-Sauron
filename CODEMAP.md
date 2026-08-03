@@ -27,7 +27,7 @@
 
 - `api/v1/auth.py` — `/auth`: логин, обновление токена, выход.
 - `api/v1/users.py` — `/users`: CRUD пользователей, назначаемые исполнители.
-- `api/v1/cases.py` — `/cases`: инциденты (создание, обновление, отчёт, архивация).
+- `api/v1/cases.py` — `/cases`: инциденты (создание, обновление, отчёт, архивация), присоединение/отсоединение одного инцидента к другому (`/attach`, `/detach`).
 - `api/v1/branches.py` — ветки timeline внутри инцидента (граф событий), без общего prefix.
 - `api/v1/events.py` — события внутри ветки timeline (создание/связи/история версий), без общего prefix.
 - `api/v1/artifacts.py` — загрузка/скачивание файловых артефактов (хранение в MinIO), без общего prefix.
@@ -36,7 +36,7 @@
 - `api/v1/alerts.py` — `/alerts`: список, эскалация в инцидент, похожие алерты, bulk-операции (assign/delete/restore/purge).
 - `api/v1/alert_rules.py` — `/alert-rules`: автоматические правила обработки входящих алертов (suppress/escalate/assign_tag).
 - `api/v1/event_sources.py` — `/event-sources`: настройка внешних источников алертов (Elastic, TheHive, email, file watch, generic JSON API), тест соединения, ручной sync.
-- `api/v1/admin.py` — `/admin`: настройки приложения, бэкап/восстановление БД и конфигурации.
+- `api/v1/admin.py` — `/admin`: настройки приложения, бэкап/восстановление БД и конфигурации, матрица прав ролей, «Демо-режим» (`/admin/demo-mode/*`: статус/переключатель, сидирование алертов+инцидентов/источников/аудит-лога, полная очистка алертов и инцидентов с фразой подтверждения).
 - `api/v1/statistics.py` — `/statistics`: обзорная статистика по алертам (timeline, top IP/аккаунты) и граф корреляций (`/statistics/correlation-graph`) для страницы «Анализ».
 - `api/v1/mitre.py` — `/mitre`: матрица MITRE ATT&CK, ручной запуск синхронизации.
 
@@ -56,6 +56,7 @@
 - `services/mitre_sync.py` — обновление таблицы `mitre_techniques` из официального STIX-бандла MITRE (GitHub).
 - `services/mitre_scheduler.py` — фоновый планировщик периодического запуска `mitre_sync`.
 - `services/storage.py` — обёртка над MinIO/S3 для хранения артефактов.
+- `services/demo_seed.py` — генерация/очистка демо-данных для «Демо-режима»: 80 инцидентов + 500 алертов, равномерно распределённых по 19 техникам MITRE ATT&CK, демо-источники алертов, демо-записи аудит-лога, полная очистка алертов/инцидентов.
 
 ### `ws/` — WebSocket
 
@@ -71,9 +72,9 @@
 - `pages/AlertDetailPage.tsx` — детальная карточка алерта (описание, похожие алерты, действия).
 - `pages/CasePage.tsx` — страница инцидента: timeline/граф событий, IOC, отчёт, участники.
 - `pages/AnalysisPage.tsx` — страница «Анализ»: поиск + граф корреляций между алертами и сущностями (обёртка над `CorrelationGraph`).
-- `pages/StatisticsPage.tsx` — графики и агрегированная статистика по алертам за период.
+- `pages/StatisticsPage.tsx` — графики и агрегированная статистика по алертам за период: по статусам/типу угрозы/URL/IP/учёткам/файлам, с текстовым поиском по этим таблицам.
 - `pages/MitreAttackPage.tsx` — матрица MITRE ATT&CK с покрытием по инцидентам.
-- `pages/AdminPanelPage.tsx` — админка: пользователи, event sources, alert rules, настройки приложения, бэкапы.
+- `pages/AdminPanelPage.tsx` — админка: пользователи, event sources, alert rules, роли, настройки приложения, бэкапы, лог действий, демо-режим (`DemoModeSection`).
 - `pages/ProfilePage.tsx` — профиль пользователя, выбор темы оформления.
 - `pages/HelpPage.tsx` — страница справки.
 
@@ -84,13 +85,16 @@
 - `components/Graph/GraphDetailsPanel.tsx` — правая панель деталей графа: описание алерта / таблица упоминаний сущности / список похожих алертов группы с таблицей счётчиков совпадений по типам (IP/учётки/файлы/IOC); клик по алерту в любом списке читает его тут же (инлайн, без ухода со страницы), с кнопкой «Назад к списку».
 - `components/Graph/EventGraph.tsx` — граф связей событий внутри ветки timeline на странице инцидента.
 - `components/Analysis/AnalyzeDropdownButton.tsx` — кнопка «Анализировать» (переход в анализатор с предзаполненным значением).
-- `components/Alerts/CaseAlertsPanel.tsx` — список алертов, привязанных к инциденту (на странице инцидента).
+- `components/Alerts/CaseAlertsPanel.tsx` — список алертов, привязанных к инциденту; если есть присоединённые инциденты, дополнительно подтягивает их алерты и показывает столбец «Присоединён» со ссылкой на дочерний инцидент.
 - `components/Alerts/SimilarAlertsPanel.tsx` — блок «похожие алерты» на странице алерта.
 - `components/Alerts/AlertModal.tsx` — модалка создания/редактирования алерта.
-- `components/Alerts/AlertRuleFormModal.tsx` — модалка создания/редактирования правила автообработки алертов.
+- `components/Alerts/AlertRuleFormModal.tsx` — модалка создания/редактирования правила автообработки алертов; действие (подавить/эскалировать/тег/в архив) выбирается выпадающим списком.
 - `components/Alerts/AlertRulesModal.tsx` — модалка списка правил автообработки.
 - `components/Alerts/AssignUserModal.tsx` — модалка назначения исполнителя алерту.
 - `components/Cases/CaseModal.tsx` — модалка создания/редактирования инцидента.
+- `components/Cases/AttachCaseModal.tsx` — модалка кнопки «Присоединить»: поиск другого инцидента, выбор главного, причина присоединения.
+- `components/Cases/AttachedIncidentsPanel.tsx` — подраздел «Инциденты» на карточке инцидента (виден только если инцидент присоединён/имеет присоединённые): главный инцидент или список присоединённых, кнопка «Отсоединить».
+- `components/Cases/AssignLeadDropdown.tsx` — кнопка «Назначить» с выпадающим списком пользователей на карточке инцидента (первая строка — «Назначить на себя»), задаёт `Case.ir_lead_id`.
 - `components/Cases/CaseReportPanel.tsx` — формирование и экспорт отчёта по инциденту (PDF через jsPDF/html2canvas).
 - `components/Cases/IOCPanel.tsx` — список и добавление IOC инцидента.
 - `components/Events/EventDetail.tsx` — детальная карточка события timeline.
@@ -99,13 +103,15 @@
 - `components/Admin/EventSourceFormModal.tsx` — форма настройки источника алертов (все типы: elastic/thehive/email/file_watch/json_api).
 - `components/Admin/UserFormModal.tsx` — форма создания/редактирования пользователя.
 - `components/Maintenance/MaintenancePage.tsx` — экран режима обслуживания (бэкап/восстановление в процессе).
-- `components/ui/*` — переиспользуемые UI-примитивы: `Badge`, `Button`, `ConfirmDialog`, `Modal`, `Pagination`, `Spinner`, `ToastContainer`, `SauronEyeIcon`, `ElfLeafIcon`.
+- `components/ui/*` — переиспользуемые UI-примитивы: `Badge`, `Button`, `ConfirmDialog`, `Modal`, `Pagination`, `Spinner`, `ToastContainer`, `SauronEyeIcon`, `ElfLeafIcon`, `MultiSelectDropdown` (чекбокс-дропдаун для мультивыбора — фильтр статусов на страницах «Алерты» и «Инциденты»).
 - `components/ErrorBoundary.tsx` — глобальный перехват ошибок рендера React.
 
 ### API-клиенты (`api/`) — по одному файлу на backend-роутер
 
 - `api/client.ts` — axios-инстанс, интерцептор авторизации/обновления токена.
 - `api/auth.ts`, `api/users.ts`, `api/cases.ts`, `api/branches.ts`, `api/events.ts`, `api/iocs.ts`, `api/alerts.ts`, `api/alertRules.ts`, `api/eventSources.ts`, `api/admin.ts`, `api/statistics.ts`, `api/mitre.ts` — тонкие обёртки над соответствующими `/v1/...` эндпоинтами backend'а.
+- `api/ping.ts` — `/v1/ping` (без авторизации): статус обслуживания + флаг `demo_mode_enabled`, используется страницей входа и шапкой.
+- `api/demoMode.ts` — переключатель демо-режима, сидирование/очистка демо-данных (`/admin/demo-mode/*`).
 
 ### Состояние (`store/`, zustand)
 

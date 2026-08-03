@@ -16,7 +16,7 @@ from app.models import (
     CaseSeverity, CaseStatus, IOC, User, UserRole,
 )
 from app.schemas import (
-    AuditLogEntry, CaseCreate, CaseDeleteRequest, CaseParticipantAdd,
+    AuditLogEntry, CaseAttachRequest, CaseCreate, CaseDeleteRequest, CaseParticipantAdd,
     CaseParticipantResponse, CaseResponse, CaseUpdate,
 )
 
@@ -27,6 +27,8 @@ def _case_options():
     return (
         selectinload(Case.ir_lead),
         selectinload(Case.participants).selectinload(CaseParticipant.user),
+        selectinload(Case.parent_case),
+        selectinload(Case.attached_cases),
     )
 
 
@@ -49,7 +51,7 @@ async def list_cases(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
-    case_status: Optional[CaseStatus] = Query(None, alias="status"),
+    case_status: Optional[List[CaseStatus]] = Query(None, alias="status"),
     severity: Optional[CaseSeverity] = None,
     ir_lead_id: Optional[uuid.UUID] = None,
     q: Optional[str] = Query(None, min_length=1),
@@ -70,7 +72,7 @@ async def list_cases(
         filters.append(Case.id.in_(subq))
 
     if case_status:
-        filters.append(Case.status == case_status)
+        filters.append(Case.status.in_(case_status))
     if severity:
         filters.append(Case.severity == severity)
     if ir_lead_id:
@@ -199,7 +201,10 @@ async def update_case(
         action="update",
         object_type="case",
         object_id=str(case.id),
-        details=update_data,
+        # JSON-safe copy for the JSONB audit column — update_data itself may
+        # hold raw UUID/datetime values (e.g. ir_lead_id), which the default
+        # json encoder can't serialize.
+        details=payload.model_dump(exclude_unset=True, mode="json"),
         request=request,
     )
 
@@ -287,6 +292,85 @@ async def delete_case(
         request=request,
     )
     await db.flush()
+
+
+# ── Attach / detach ─────────────────────────────────────────────────────────────
+# "Присоединить": links this case to another as its main incident (or makes
+# it the main for the other, per main_case_id) — a lightweight one-level
+# grouping, not a data merge. A case can only be attached to one main case at
+# a time; a main case can have many attached cases.
+
+@router.post("/{case_id}/attach", response_model=CaseResponse)
+async def attach_case(
+    case_id: uuid.UUID,
+    payload: CaseAttachRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
+) -> Case:
+    if payload.other_case_id == case_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя присоединить инцидент к самому себе",
+        )
+    if payload.main_case_id not in (case_id, payload.other_case_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Главный инцидент должен быть одним из двух выбранных",
+        )
+
+    case = await _get_case_or_404(case_id, db)
+    other = await _get_case_or_404(payload.other_case_id, db)
+    main, child = (case, other) if payload.main_case_id == case_id else (other, case)
+
+    if child.parent_case_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Инцидент «{child.title}» уже присоединён к другому инциденту — сначала отсоедините",
+        )
+    if main.parent_case_id == child.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя присоединить инцидент к своему же дочернему инциденту",
+        )
+
+    reason = payload.reason.strip()
+    child.parent_case_id = main.id
+    child.attach_reason = reason
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=child.id,
+        action="attach", object_type="case", object_id=str(child.id),
+        details={"main_case_id": str(main.id), "reason": reason}, request=request,
+    )
+
+    await db.flush()
+    return await _get_case_or_404(case_id, db)
+
+
+@router.post("/{case_id}/detach", response_model=CaseResponse)
+async def detach_case(
+    case_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_manage_cases)],
+) -> Case:
+    case = await _get_case_or_404(case_id, db)
+    if case.parent_case_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Инцидент не присоединён к другому",
+        )
+    previous_main_id = case.parent_case_id
+    case.parent_case_id = None
+    case.attach_reason = None
+
+    await log_action(
+        db=db, user_id=current_user.id, case_id=case.id,
+        action="detach", object_type="case", object_id=str(case.id),
+        details={"previous_main_case_id": str(previous_main_id)}, request=request,
+    )
+
+    await db.flush()
+    return await _get_case_or_404(case_id, db)
 
 
 # ── Participants ───────────────────────────────────────────────────────────────

@@ -25,8 +25,7 @@ from app.services.alert_stats_parsing import is_internal_ip, resolve_accounts, r
 from app.services.mitre_attack import raised_alert_severity
 
 _SEVERITY_ORDER = [
-    CaseSeverity.critical, CaseSeverity.high, CaseSeverity.medium,
-    CaseSeverity.low, CaseSeverity.informational,
+    CaseSeverity.critical, CaseSeverity.high, CaseSeverity.medium, CaseSeverity.low,
 ]
 
 _SIMILAR_ALERTS_LIMIT = 100
@@ -70,7 +69,7 @@ async def list_alerts(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
-    alert_status: Optional[AlertStatus] = Query(None, alias="status"),
+    alert_status: Optional[List[AlertStatus]] = Query(None, alias="status"),
     severity: Optional[CaseSeverity] = None,
     case_id: Optional[uuid.UUID] = None,
     deleted: bool = False,
@@ -79,7 +78,7 @@ async def list_alerts(
 ) -> List[Alert]:
     filters = [Alert.is_deleted == deleted]
     if alert_status:
-        filters.append(Alert.status == alert_status)
+        filters.append(Alert.status.in_(alert_status))
     if severity:
         filters.append(Alert.severity == severity)
     if case_id:

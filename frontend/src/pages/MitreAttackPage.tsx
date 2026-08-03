@@ -17,7 +17,6 @@ const SEVERITY_COLOR: Record<string, string> = {
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const SEVERITY_LABEL: Record<string, string> = {
@@ -25,7 +24,6 @@ const SEVERITY_LABEL: Record<string, string> = {
   high: 'Высокий',
   medium: 'Средний',
   low: 'Низкий',
-  informational: 'Информационный',
 }
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -33,7 +31,6 @@ const SEVERITY_DOT: Record<string, string> = {
   high: '#ff8c00',
   medium: '#d29922',
   low: '#3fb950',
-  informational: '#8b949e',
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -41,7 +38,6 @@ const SEVERITY_RANK: Record<string, number> = {
   high: 3,
   medium: 2,
   low: 1,
-  informational: 0,
 }
 
 function fmtDateTime(value?: string | null): string {

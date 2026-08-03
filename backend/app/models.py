@@ -22,6 +22,7 @@ class UserRole(str, enum.Enum):
     investigator = "investigator"
     observer = "observer"
     external_contractor = "external_contractor"
+    demo = "demo"
 
 
 class CaseStatus(str, enum.Enum):
@@ -36,7 +37,6 @@ class CaseSeverity(str, enum.Enum):
     high = "high"
     medium = "medium"
     low = "low"
-    informational = "informational"
 
 
 class BranchStatus(str, enum.Enum):
@@ -77,6 +77,7 @@ class AlertStatus(str, enum.Enum):
     triaged = "triaged"
     escalated = "escalated"
     dismissed = "dismissed"
+    archived = "archived"
 
 
 class EventSourceType(str, enum.Enum):
@@ -91,6 +92,7 @@ class AlertRuleAction(str, enum.Enum):
     suppress = "suppress"
     escalate = "escalate"
     assign_tag = "assign_tag"
+    archive = "archive"
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────
@@ -236,6 +238,13 @@ class Case(Base):
     archived_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Case-to-case attachment ("Присоединить"): a child case points at its
+    # main case via parent_case_id. One main case can have many attached
+    # (child) cases; a case can only be attached to one main case at a time.
+    parent_case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
+    )
+    attach_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -249,6 +258,12 @@ class Case(Base):
     branches: Mapped[List["Branch"]] = relationship("Branch", back_populates="case", cascade="all, delete-orphan")
     iocs: Mapped[List["IOC"]] = relationship("IOC", back_populates="case", cascade="all, delete-orphan")
     audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="case")
+    parent_case: Mapped[Optional["Case"]] = relationship(
+        "Case", remote_side="Case.id", foreign_keys=[parent_case_id], back_populates="attached_cases",
+    )
+    attached_cases: Mapped[List["Case"]] = relationship(
+        "Case", foreign_keys=[parent_case_id], back_populates="parent_case",
+    )
 
 
 class CaseParticipant(Base):
@@ -713,6 +728,8 @@ class AppSettings(Base):
     mitre_last_sync_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     mitre_last_sync_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     mitre_technique_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    demo_mode_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -15,18 +15,22 @@ import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
 import { ElfLeafIcon } from '../components/ui/ElfLeafIcon'
 import { Pagination } from '../components/ui/Pagination'
+import { MultiSelectDropdown } from '../components/ui/MultiSelectDropdown'
 import type { Case, CaseStatus, CaseSeverity, CreateCaseData } from '../types'
 import {
   CASE_STATUS_LABELS, CASE_SEVERITY_LABELS,
   getCaseStatusLabel, getCaseStatusIconVariant,
 } from '../types'
 
+const STATUS_OPTIONS = (Object.entries(CASE_STATUS_LABELS) as [CaseStatus, string][]).map(
+  ([value, label]) => ({ value, label }),
+)
+
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   critical: 'red',
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const STATUS_COLOR: Record<CaseStatus, string> = {
@@ -65,7 +69,7 @@ export const DashboardPage: React.FC = () => {
 
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterStatuses, setFilterStatuses] = useState<Set<CaseStatus>>(new Set())
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
   const [showArchived, setShowArchived] = useState(false)
   const [showModal, setShowModal] = useState(false)
@@ -86,25 +90,26 @@ export const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     const params: {
-      status?: string; severity?: string; q?: string; archived?: boolean; skip?: number; limit?: number
+      status?: string[]; severity?: string; q?: string; archived?: boolean; skip?: number; limit?: number
     } = {
       skip: (page - 1) * pageSize,
       limit: pageSize,
       archived: showArchived,
     }
-    if (filterStatus !== 'all') params.status = filterStatus
+    if (filterStatuses.size > 0) params.status = [...filterStatuses]
     if (filterSeverity !== 'all') params.severity = filterSeverity
     if (debouncedSearch) params.q = debouncedSearch
     fetchCases(params).catch(() => toast.error('Ошибка загрузки инцидентов'))
-  }, [filterStatus, filterSeverity, debouncedSearch, showArchived, page, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatuses, filterSeverity, debouncedSearch, showArchived, page, pageSize])
 
   const handleToggleShowArchived = () => {
     setShowArchived((v) => !v)
     setPage(1)
   }
 
-  const handleFilterStatusChange = (v: string) => {
-    setFilterStatus(v)
+  const handleFilterStatusesChange = (next: Set<string>) => {
+    setFilterStatuses(next as Set<CaseStatus>)
     setPage(1)
   }
 
@@ -144,7 +149,7 @@ export const DashboardPage: React.FC = () => {
     user?.role === 'admin' || user?.role === 'ir_lead' || user?.role === 'investigator'
 
   const hasActiveFilter =
-    filterStatus !== 'all' || filterSeverity !== 'all' || debouncedSearch !== '' || showArchived
+    filterStatuses.size > 0 || filterSeverity !== 'all' || debouncedSearch !== '' || showArchived
 
   return (
     <AppLayout>
@@ -209,18 +214,13 @@ export const DashboardPage: React.FC = () => {
             >
               Статус:
             </label>
-            <select
-              value={filterStatus}
-              onChange={(e) => handleFilterStatusChange(e.target.value)}
-              style={{ width: 150 }}
-            >
-              <option value="all">Все статусы</option>
-              {Object.entries(CASE_STATUS_LABELS).map(([val, label]) => (
-                <option key={val} value={val}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <MultiSelectDropdown
+              options={STATUS_OPTIONS}
+              selected={filterStatuses}
+              onChange={handleFilterStatusesChange}
+              placeholder="Все статусы"
+              width={170}
+            />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label

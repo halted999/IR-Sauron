@@ -49,18 +49,18 @@ async def _create_enum_types_if_missing(conn) -> None:
     """
     enums = {
         "user_role": [
-            "admin", "ir_lead", "investigator", "observer", "external_contractor",
+            "admin", "ir_lead", "investigator", "observer", "external_contractor", "demo",
         ],
         "case_status": ["open", "in_progress", "confirmed", "rejected"],
-        "case_severity": ["critical", "high", "medium", "low", "informational"],
+        "case_severity": ["critical", "high", "medium", "low"],
         "branch_status": ["hypothesis", "confirmed", "rejected"],
         "event_type": ["attacker_action", "detection", "ir_action", "inference", "legal_event"],
         "action_type": ["network_connection", "logon_event", "file_operation", "command_execution"],
         "confidence_level": ["confirmed", "corroborated", "hypothesis"],
         "comment_visibility": ["internal", "report"],
-        "alert_status": ["new", "triaged", "escalated", "dismissed"],
-        "event_source_type": ["elastic", "thehive"],
-        "alert_rule_action": ["suppress", "escalate", "assign_tag"],
+        "alert_status": ["new", "triaged", "escalated", "dismissed", "archived"],
+        "event_source_type": ["elastic", "thehive", "file_watch", "email", "json_api"],
+        "alert_rule_action": ["suppress", "escalate", "assign_tag", "archive"],
     }
     for name, values in enums.items():
         quoted = ", ".join(f"'{v}'" for v in values)
@@ -70,6 +70,12 @@ async def _create_enum_types_if_missing(conn) -> None:
     # Enum values added after the type already existed on a deployed database
     # (CREATE TYPE above is a no-op there) must be added explicitly.
     await conn.execute(text("ALTER TYPE alert_rule_action ADD VALUE IF NOT EXISTS 'assign_tag'"))
+    await conn.execute(text("ALTER TYPE alert_rule_action ADD VALUE IF NOT EXISTS 'archive'"))
+    await conn.execute(text("ALTER TYPE alert_status ADD VALUE IF NOT EXISTS 'archived'"))
+    await conn.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'demo'"))
+    await conn.execute(text("ALTER TYPE event_source_type ADD VALUE IF NOT EXISTS 'file_watch'"))
+    await conn.execute(text("ALTER TYPE event_source_type ADD VALUE IF NOT EXISTS 'email'"))
+    await conn.execute(text("ALTER TYPE event_source_type ADD VALUE IF NOT EXISTS 'json_api'"))
     # case_status merged with the old separate verification_status field —
     # add the new values so existing deployments can migrate their data
     # (see _migrate_legacy_case_status, run in a later, separate transaction —
@@ -192,6 +198,13 @@ async def _add_missing_columns_if_needed(conn) -> None:
         )
     )
     await conn.execute(
+        text(
+            "ALTER TABLE cases ADD COLUMN IF NOT EXISTS parent_case_id UUID NULL "
+            "REFERENCES cases(id) ON DELETE SET NULL"
+        )
+    )
+    await conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS attach_reason TEXT NULL"))
+    await conn.execute(
         text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_sync_interval_hours INTEGER NOT NULL DEFAULT 24")
     )
     await conn.execute(
@@ -207,8 +220,51 @@ async def _add_missing_columns_if_needed(conn) -> None:
         text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mitre_technique_count INTEGER NULL")
     )
     await conn.execute(
+        text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS demo_mode_enabled BOOLEAN NOT NULL DEFAULT false")
+    )
+    await conn.execute(
         text("ALTER TABLE event_sources ADD COLUMN IF NOT EXISTS file_offsets JSONB NULL")
     )
+
+
+async def _migrate_informational_severity_to_low(conn) -> None:
+    """
+    The 'informational' severity level was removed from CaseSeverity — every
+    alert/case/alert-rule already using it is downgraded to 'low' (Postgres
+    has no ALTER TYPE ... DROP VALUE, so the enum type itself is swapped for
+    a fresh one without that value once no row references it anymore).
+    Idempotent: a no-op once already migrated.
+    """
+    has_value = await conn.scalar(
+        text(
+            "SELECT 1 FROM pg_enum WHERE enumlabel = 'informational' "
+            "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'case_severity')"
+        )
+    )
+    if not has_value:
+        return  # already migrated (or fresh install, created without it)
+
+    await conn.execute(text("UPDATE alerts SET severity = 'low' WHERE severity = 'informational'"))
+    await conn.execute(text("UPDATE cases SET severity = 'low' WHERE severity = 'informational'"))
+    await conn.execute(
+        text("UPDATE alert_rules SET match_severity = 'low' WHERE match_severity = 'informational'")
+    )
+
+    await conn.execute(text("ALTER TYPE case_severity RENAME TO case_severity_old"))
+    await conn.execute(text("CREATE TYPE case_severity AS ENUM ('critical', 'high', 'medium', 'low')"))
+    await conn.execute(
+        text("ALTER TABLE alerts ALTER COLUMN severity TYPE case_severity USING severity::text::case_severity")
+    )
+    await conn.execute(
+        text("ALTER TABLE cases ALTER COLUMN severity TYPE case_severity USING severity::text::case_severity")
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE alert_rules ALTER COLUMN match_severity TYPE case_severity "
+            "USING match_severity::text::case_severity"
+        )
+    )
+    await conn.execute(text("DROP TYPE case_severity_old"))
 
 
 async def _migrate_legacy_case_status(conn) -> None:
@@ -240,6 +296,11 @@ async def _migrate_legacy_case_status(conn) -> None:
             "WHERE status IN ('active', 'review', 'closed')"
         )
     )
+    # The column itself was never dropped after the data migration above, and
+    # its NOT NULL constraint (with no default) breaks every new case insert
+    # since the Case model has no such field to populate — relax it rather
+    # than dropping the column outright, since ORM inserts simply omit it.
+    await conn.execute(text("ALTER TABLE cases ALTER COLUMN verification_status DROP NOT NULL"))
 
 
 async def _ensure_admin_user() -> None:
@@ -300,6 +361,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await _add_missing_columns_if_needed(conn)
     async with engine.begin() as conn:
         await _migrate_legacy_case_status(conn)
+        await _migrate_informational_severity_to_low(conn)
     await _ensure_admin_user()
     await _seed_role_permissions()
 
@@ -408,16 +470,20 @@ async def health_check(
 
 
 @app.get("/v1/ping", tags=["health"])
-async def ping() -> dict:
+async def ping(db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
     """Lightweight, unauthenticated, maintenance-mode-exempt endpoint — used
     by the frontend to detect when a database restore has finished, and to
-    poll its progress while it runs."""
+    poll its progress while it runs. Also exposes demo_mode_enabled so the
+    login page and app header can react to it without authentication."""
     reason = await get_maintenance_reason()
     progress = await get_restore_progress()
     last_error = await get_last_restore_error()
+    settings_result = await db.execute(select(AppSettings.demo_mode_enabled).where(AppSettings.id == 1))
+    demo_mode_enabled = bool(settings_result.scalar_one_or_none() or False)
     return {
         "status": "ok",
         "maintenance": bool(reason),
+        "demo_mode_enabled": demo_mode_enabled,
         "reason": reason,
         "progress": {"processed": progress[0], "total": progress[1]} if progress else None,
         "last_error": last_error,

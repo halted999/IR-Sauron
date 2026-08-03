@@ -68,6 +68,13 @@ for _perm, _allowed in {
 }.items():
     DEFAULT_ROLE_PERMISSIONS[(UserRole.external_contractor, _perm)] = _allowed
 
+# Demo account: read-only everywhere (like observer) but can see every case,
+# not just ones it participates in — a showcase account should never look
+# like it's missing data. Deliberately not in admin.py's _EDITABLE_ROLES, so
+# this guarantee can't be loosened by editing the permission matrix in the UI.
+for _perm in PERMISSION_KEYS:
+    DEFAULT_ROLE_PERMISSIONS[(UserRole.demo, _perm)] = (_perm == "view_all_cases")
+
 
 async def has_permission(db: AsyncSession, role: UserRole, permission: str) -> bool:
     if role == UserRole.admin:

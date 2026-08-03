@@ -1,8 +1,10 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
 import { useThemeStore } from '../../store/theme'
 import { ROLE_LABELS } from '../../types'
+import { Badge } from '../ui/Badge'
+import { getPing } from '../../api/ping'
 
 const navLinkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
   padding: '4px 12px',
@@ -23,6 +25,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore()
   const { theme } = useThemeStore()
   const navigate = useNavigate()
+  const [demoModeEnabled, setDemoModeEnabled] = useState(false)
+
+  useEffect(() => {
+    getPing()
+      .then((res) => setDemoModeEnabled(res.demo_mode_enabled))
+      .catch(() => {})
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -123,6 +132,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             MITRE ATT&amp;CK
           </NavLink>
         </nav>
+
+        {user && demoModeEnabled && <Badge color="orange" label="РЕЖИМ DEMO" size="sm" />}
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />

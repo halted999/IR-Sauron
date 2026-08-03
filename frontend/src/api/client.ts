@@ -9,6 +9,11 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // Array params (e.g. multi-select status filters) must serialize as
+  // repeated bare keys (status=a&status=b) to match FastAPI's List[Enum]
+  // Query parsing — axios's default (`status[]=a&status[]=b`) is silently
+  // ignored by FastAPI, making such filters look like they do nothing.
+  paramsSerializer: { indexes: null },
 })
 
 export function setAuthToken(token: string | null): void {

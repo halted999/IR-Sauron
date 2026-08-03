@@ -5,7 +5,7 @@ import { ru } from 'date-fns/locale'
 import { getAlerts, detachAlert } from '../../api/alerts'
 import { useAuthStore } from '../../store/auth'
 import { useToastStore } from '../../store/toast'
-import type { Alert, AlertStatus, CaseSeverity } from '../../types'
+import type { Alert, AlertStatus, CaseSeverity, CaseSummary } from '../../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../../types'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -14,6 +14,7 @@ import { AnalyzeDropdownButton } from '../Analysis/AnalyzeDropdownButton'
 
 interface CaseAlertsPanelProps {
   caseId: string
+  attachedCases?: CaseSummary[]
 }
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
@@ -21,7 +22,6 @@ const SEVERITY_COLOR: Record<CaseSeverity, string> = {
   high: 'orange',
   medium: 'yellow',
   low: 'green',
-  informational: 'gray',
 }
 
 const STATUS_COLOR: Record<AlertStatus, string> = {
@@ -29,9 +29,10 @@ const STATUS_COLOR: Record<AlertStatus, string> = {
   triaged: 'yellow',
   escalated: 'green',
   dismissed: 'gray',
+  archived: 'gray',
 }
 
-export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
+export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attachedCases = [] }) => {
   const navigate = useNavigate()
   const toast = useToastStore()
   const { user } = useAuthStore()
@@ -45,14 +46,22 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
     user?.role === 'ir_lead' ||
     user?.role === 'investigator'
 
+  const attachedCaseTitleById = new Map(attachedCases.map((c) => [c.id, c.title]))
+  const attachedCaseIds = attachedCases.map((c) => c.id)
+
   useEffect(() => {
     setIsLoading(true)
-    getAlerts({ case_id: caseId })
-      .then(setAlerts)
+    Promise.all([caseId, ...attachedCaseIds].map((id) => getAlerts({ case_id: id, limit: 500 })))
+      .then((results) => {
+        const merged = results.flat()
+        merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        setAlerts(merged)
+      })
       .catch(() => toast.error('Ошибка загрузки алертов инцидента'))
       .finally(() => setIsLoading(false))
     setSelectedIds(new Set())
-  }, [caseId]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, JSON.stringify(attachedCaseIds)])
 
   const allSelected = alerts.length > 0 && alerts.every((a) => selectedIds.has(a.id))
 
@@ -155,6 +164,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
             <Th>Источник</Th>
             <Th>Критичность</Th>
             <Th>Статус</Th>
+            {attachedCases.length > 0 && <Th>Присоединён</Th>}
             <Th>Создан</Th>
             <Th></Th>
           </tr>
@@ -214,6 +224,25 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId }) => {
                   size="sm"
                 />
               </Td>
+              {attachedCases.length > 0 && (
+                <Td onClick={(e) => e.stopPropagation()}>
+                  {a.case_id && a.case_id !== caseId && attachedCaseTitleById.has(a.case_id) ? (
+                    <button
+                      onClick={() => navigate(`/cases/${a.case_id}`)}
+                      title="Перейти к присоединённому инциденту"
+                      style={{
+                        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                        color: 'var(--accent)', fontSize: 12, textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      → {attachedCaseTitleById.get(a.case_id)}
+                    </button>
+                  ) : (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+                  )}
+                </Td>
+              )}
               <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
                 {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
               </Td>

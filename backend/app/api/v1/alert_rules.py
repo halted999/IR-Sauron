@@ -73,7 +73,11 @@ async def update_alert_rule(
     await log_action(
         db=db, user_id=current_user.id, case_id=None,
         action="update", object_type="alert_rule", object_id=str(rule.id),
-        details=update_data, request=request,
+        # JSON-safe copy for the JSONB audit column — update_data itself may
+        # hold a raw UUID value (target_case_id), which the default json
+        # encoder can't serialize.
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+        request=request,
     )
 
     await db.flush()

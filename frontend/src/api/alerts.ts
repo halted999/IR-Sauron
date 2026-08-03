@@ -5,7 +5,7 @@ import type {
 } from '../types'
 
 export interface AlertsParams {
-  status?: AlertStatus
+  status?: AlertStatus | AlertStatus[]
   severity?: CaseSeverity
   case_id?: string
   deleted?: boolean

@@ -2,7 +2,7 @@ import apiClient from './client'
 import type { Case, CreateCaseData } from '../types'
 
 export interface CasesParams {
-  status?: string
+  status?: string | string[]
   severity?: string
   q?: string
   archived?: boolean
@@ -38,6 +38,7 @@ export async function createCase(data: CreateCaseData): Promise<Case> {
 
 export interface UpdateCaseData extends Partial<CreateCaseData> {
   status?: string
+  ir_lead_id?: string
   root_cause?: string
   impact_summary?: string
   attribution?: string
@@ -93,5 +94,21 @@ export async function unarchiveCase(id: string): Promise<Case> {
 
 export async function deleteCase(id: string, reason: string): Promise<void> {
   await apiClient.delete(`/cases/${id}`, { data: { reason } })
+}
+
+export interface AttachCaseData {
+  other_case_id: string
+  main_case_id: string
+  reason: string
+}
+
+export async function attachCase(id: string, data: AttachCaseData): Promise<Case> {
+  const response = await apiClient.post<Case>(`/cases/${id}/attach`, data)
+  return response.data
+}
+
+export async function detachCase(id: string): Promise<Case> {
+  const response = await apiClient.post<Case>(`/cases/${id}/detach`)
+  return response.data
 }
 

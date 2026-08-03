@@ -26,10 +26,15 @@ import {
 } from '../api/eventSources'
 import type { EventSource, CreateEventSourceData, UpdateEventSourceData } from '../api/eventSources'
 import { EventSourceFormModal } from '../components/Admin/EventSourceFormModal'
+import {
+  getDemoModeStatus, toggleDemoMode, seedDemoData, seedDemoEventSources, seedDemoAuditLog, clearDemoData,
+  CLEAR_CONFIRM_PHRASE,
+} from '../api/demoMode'
 import type { User, UserRole } from '../types'
 import { ROLE_LABELS } from '../types'
 
-type Section = 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup' | 'audit_log'
+type Section =
+  | 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup' | 'audit_log' | 'demo_mode'
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'notifications', label: 'Оповещения' },
@@ -39,6 +44,7 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'timezone', label: 'Временная зона' },
   { key: 'backup', label: 'Импорт/бекап' },
   { key: 'audit_log', label: 'Лог действий' },
+  { key: 'demo_mode', label: 'Демо-режим' },
 ]
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -55,6 +61,7 @@ const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   investigator: 'Ведёт расследование: создаёт события и эскалирует алерты в инцидентах, где указан участником.',
   observer: 'Только просмотр инцидентов и таймлайна, без права редактирования.',
   external_contractor: 'Внешний подрядчик с ограниченным доступом только на чтение.',
+  demo: 'Служебная роль для демо-режима: просмотр всех инцидентов и алертов без права записи. Права зафиксированы и не редактируются в матрице ролей.',
 }
 
 const TIMEZONES = [
@@ -175,6 +182,7 @@ export const AdminPanelPage: React.FC = () => {
               {activeSection === 'roles' && <RolesSection />}
               {activeSection === 'timezone' && <TimezoneSection />}
               {activeSection === 'backup' && <BackupSection />}
+              {activeSection === 'demo_mode' && <DemoModeSection />}
             </div>
           )}
         </div>
@@ -571,6 +579,8 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   activate: 'Активация',
   deactivate: 'Деактивация',
   merge: 'Слияние',
+  attach: 'Присоединение к инциденту',
+  detach: 'Отсоединение от инцидента',
   assign: 'Назначение',
   unassign: 'Снятие назначения',
   create_link: 'Создание связи',
@@ -816,7 +826,7 @@ const RolesSection: React.FC = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([role, label]) => {
-            const isAdmin = role === 'admin'
+            const isFixedRole = role === 'admin' || role === 'demo'
             const isExpanded = expandedRole === role
             return (
               <div
@@ -829,8 +839,8 @@ const RolesSection: React.FC = () => {
                 }}
               >
                 <button
-                  onClick={() => !isAdmin && setExpandedRole(isExpanded ? null : role)}
-                  disabled={isAdmin}
+                  onClick={() => !isFixedRole && setExpandedRole(isExpanded ? null : role)}
+                  disabled={isFixedRole}
                   style={{
                     width: '100%',
                     textAlign: 'left',
@@ -838,7 +848,7 @@ const RolesSection: React.FC = () => {
                     background: 'none',
                     border: 'none',
                     color: 'var(--text-primary)',
-                    cursor: isAdmin ? 'default' : 'pointer',
+                    cursor: isFixedRole ? 'default' : 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -849,14 +859,14 @@ const RolesSection: React.FC = () => {
                     <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{label}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ROLE_DESCRIPTIONS[role]}</div>
                   </div>
-                  {!isAdmin && (
+                  {!isFixedRole && (
                     <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap', marginLeft: 12 }}>
                       {isExpanded ? '▲ Свернуть' : '▼ Настроить'}
                     </span>
                   )}
                 </button>
 
-                {isExpanded && !isAdmin && (
+                {isExpanded && !isFixedRole && (
                   <div
                     style={{
                       padding: '2px 16px 16px',
@@ -1360,6 +1370,172 @@ const RestoreCard: React.FC<{
         </Button>
       </div>
     </Card>
+  )
+}
+
+// ─── Demo mode ────────────────────────────────────────────────────────────────
+
+const DemoModeSection: React.FC = () => {
+  const toast = useToastStore()
+  const [enabled, setEnabled] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isToggling, setIsToggling] = useState(false)
+  const [isSeedingData, setIsSeedingData] = useState(false)
+  const [isSeedingSources, setIsSeedingSources] = useState(false)
+  const [isSeedingAuditLog, setIsSeedingAuditLog] = useState(false)
+  const [isClearing, setIsClearing] = useState(false)
+  const [clearConfirmText, setClearConfirmText] = useState('')
+
+  useEffect(() => {
+    getDemoModeStatus()
+      .then((res) => setEnabled(res.enabled))
+      .catch(() => toast.error('Ошибка загрузки статуса демо-режима'))
+      .finally(() => setIsLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleToggle = async () => {
+    const next = !enabled
+    setIsToggling(true)
+    setEnabled(next)
+    try {
+      await toggleDemoMode(next)
+      toast.success(next ? 'Демо-режим включён' : 'Демо-режим выключен')
+    } catch {
+      setEnabled(!next)
+      toast.error('Ошибка изменения демо-режима')
+    } finally {
+      setIsToggling(false)
+    }
+  }
+
+  const handleSeedData = async () => {
+    setIsSeedingData(true)
+    try {
+      const res = await seedDemoData()
+      toast.success(`Создано ${res.cases_created} инцидентов и ${res.alerts_created} алертов`)
+    } catch {
+      toast.error('Ошибка заполнения демо-данных')
+    } finally {
+      setIsSeedingData(false)
+    }
+  }
+
+  const handleSeedSources = async () => {
+    setIsSeedingSources(true)
+    try {
+      const res = await seedDemoEventSources()
+      toast.success(`Создано источников алертов: ${res.created}`)
+    } catch {
+      toast.error('Ошибка заполнения источников алертов')
+    } finally {
+      setIsSeedingSources(false)
+    }
+  }
+
+  const handleSeedAuditLog = async () => {
+    setIsSeedingAuditLog(true)
+    try {
+      const res = await seedDemoAuditLog()
+      toast.success(`Добавлено записей лога: ${res.created}`)
+    } catch {
+      toast.error('Ошибка заполнения лога действий')
+    } finally {
+      setIsSeedingAuditLog(false)
+    }
+  }
+
+  const canClear = clearConfirmText.trim() === CLEAR_CONFIRM_PHRASE
+
+  const handleClear = async () => {
+    if (!canClear) return
+    if (!confirm('Это необратимо удалит ВСЕ алерты и инциденты в системе, включая реальные рабочие данные. Продолжить?')) {
+      return
+    }
+    setIsClearing(true)
+    try {
+      const res = await clearDemoData(clearConfirmText.trim())
+      toast.success(`Удалено: ${res.alerts_deleted} алертов, ${res.cases_deleted} инцидентов`)
+      setClearConfirmText('')
+    } catch {
+      toast.error('Ошибка очистки данных')
+    } finally {
+      setIsClearing(false)
+    }
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Демо-режим"
+        description="Подготовка системы к демонстрации: индикатор в шапке, учётная запись demo/demo с доступом только на чтение, и наполнение/очистка тестовых данных."
+      />
+
+      <Card>
+        <CardTitle>Режим демо</CardTitle>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+          Включает оранжевую плашку «РЕЖИМ DEMO» в шапке для всех пользователей, показывает учётные данные
+          demo/demo на странице входа и обеспечивает существование активной учётной записи demo с доступом
+          только на чтение ко всем разделам. Выключение также деактивирует учётную запись demo.
+        </div>
+        {isLoading ? (
+          <Spinner size={22} />
+        ) : (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={handleToggle}
+              disabled={isToggling}
+              style={{ width: 'auto' }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              {enabled ? 'Демо-режим включён' : 'Демо-режим выключен'}
+            </span>
+          </label>
+        )}
+      </Card>
+
+      <Card>
+        <CardTitle>Демо-данные</CardTitle>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+          Создаёт 80 инцидентов и 500 алертов (320 прикреплены к инцидентам, 180 без привязки),
+          равномерно распределённых по 19 техникам MITRE ATT&amp;CK.
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Button variant="primary" size="sm" onClick={handleSeedData} isLoading={isSeedingData}>
+            Заполнить алерты и инциденты
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleSeedSources} isLoading={isSeedingSources}>
+            Заполнить источники алертов
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleSeedAuditLog} isLoading={isSeedingAuditLog}>
+            Заполнить лог действий
+          </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Очистка данных</CardTitle>
+        <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 10 }}>
+          Необратимо удаляет ВСЕ алерты и инциденты в системе — включая реальные рабочие данные,
+          а не только демо-данные.
+        </div>
+        <Field label={`Подтверждение — введите «${CLEAR_CONFIRM_PHRASE}»`}>
+          <input
+            type="text"
+            value={clearConfirmText}
+            onChange={(e) => setClearConfirmText(e.target.value)}
+            placeholder={CLEAR_CONFIRM_PHRASE}
+          />
+        </Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <Button variant="danger" size="sm" onClick={handleClear} isLoading={isClearing} disabled={!canClear}>
+            Очистить алерты и инциденты
+          </Button>
+        </div>
+      </Card>
+    </div>
   )
 }
 

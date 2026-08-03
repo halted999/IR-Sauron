@@ -53,8 +53,8 @@ _NAME_TO_SHORTNAME = {name.lower(): short for short, name in TACTIC_LABELS.items
 
 # Approved methodology — Критичность (severity, 5 levels; alerts + incidents).
 TACTIC_SEVERITY: Dict[str, CaseSeverity] = {
-    "reconnaissance": CaseSeverity.informational,
-    "resource-development": CaseSeverity.informational,
+    "reconnaissance": CaseSeverity.low,
+    "resource-development": CaseSeverity.low,
     "initial-access": CaseSeverity.low,
     "discovery": CaseSeverity.low,
     "execution": CaseSeverity.medium,
@@ -90,7 +90,6 @@ TACTIC_GRIF: Dict[str, str] = {
 }
 
 _SEVERITY_RANK: Dict[CaseSeverity, int] = {
-    CaseSeverity.informational: 0,
     CaseSeverity.low: 1,
     CaseSeverity.medium: 2,
     CaseSeverity.high: 3,

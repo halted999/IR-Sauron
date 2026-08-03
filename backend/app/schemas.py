@@ -149,6 +149,21 @@ class CaseUpdate(BaseModel):
     approval_notes: Optional[str] = None
 
 
+class CaseListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    status: CaseStatus
+    severity: CaseSeverity
+    ir_lead_id: Optional[uuid.UUID]
+    classification: Optional[str]
+    incident_discovered_at: Optional[datetime]
+    attach_reason: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class CaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -193,6 +208,10 @@ class CaseResponse(BaseModel):
     approval_notes: Optional[str] = None
     is_archived: bool = False
     archived_at: Optional[datetime] = None
+    parent_case_id: Optional[uuid.UUID] = None
+    attach_reason: Optional[str] = None
+    parent_case: Optional[CaseListResponse] = None
+    attached_cases: List[CaseListResponse] = []
     created_at: datetime
     updated_at: datetime
     participants: List[CaseParticipantResponse] = []
@@ -202,18 +221,10 @@ class CaseDeleteRequest(BaseModel):
     reason: str = Field(..., min_length=1)
 
 
-class CaseListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    title: str
-    status: CaseStatus
-    severity: CaseSeverity
-    ir_lead_id: Optional[uuid.UUID]
-    classification: Optional[str]
-    incident_discovered_at: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
+class CaseAttachRequest(BaseModel):
+    other_case_id: uuid.UUID
+    main_case_id: uuid.UUID
+    reason: str = Field(..., min_length=1)
 
 
 # ─── Alert ────────────────────────────────────────────────────────────────────
@@ -383,8 +394,11 @@ class AlertRuleCreate(BaseModel):
                 "Укажите хотя бы один признак для сопоставления "
                 "(источник, критичность, заголовок или описание)"
             )
-        if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
-            raise ValueError("target_case_id недопустим для действия 'suppress'")
+        if (
+            self.action in (AlertRuleAction.suppress, AlertRuleAction.archive)
+            and self.target_case_id is not None
+        ):
+            raise ValueError("target_case_id недопустим для этого действия")
         if self.action == AlertRuleAction.assign_tag:
             if self.target_case_id is not None:
                 raise ValueError("target_case_id недопустим для действия 'assign_tag'")
@@ -448,8 +462,11 @@ class AlertRuleFromSelectionRequest(BaseModel):
                 "Укажите хотя бы один признак для сопоставления "
                 "(источник, критичность, заголовок или описание)"
             )
-        if self.action == AlertRuleAction.suppress and self.target_case_id is not None:
-            raise ValueError("target_case_id недопустим для действия 'suppress'")
+        if (
+            self.action in (AlertRuleAction.suppress, AlertRuleAction.archive)
+            and self.target_case_id is not None
+        ):
+            raise ValueError("target_case_id недопустим для этого действия")
         if self.action == AlertRuleAction.assign_tag:
             if self.target_case_id is not None:
                 raise ValueError("target_case_id недопустим для действия 'assign_tag'")
@@ -795,6 +812,34 @@ class AppSettingsResponse(BaseModel):
     updated_at: datetime
 
 
+# ─── Demo mode ──────────────────────────────────────────────────────────────
+
+class DemoModeStatus(BaseModel):
+    enabled: bool
+
+
+class DemoModeToggleRequest(BaseModel):
+    enabled: bool
+
+
+class DemoModeClearRequest(BaseModel):
+    confirm: str
+
+
+class DemoModeSeedDataResult(BaseModel):
+    cases_created: int
+    alerts_created: int
+
+
+class DemoModeSeedCountResult(BaseModel):
+    created: int
+
+
+class DemoModeClearResult(BaseModel):
+    alerts_deleted: int
+    cases_deleted: int
+
+
 # ─── MITRE ATT&CK ───────────────────────────────────────────────────────────
 
 class MitreTechniqueResponse(BaseModel):
@@ -961,6 +1006,7 @@ class StatisticsResponse(BaseModel):
     top_external_ips: List[ValueCount]
     top_internal_ips: List[ValueCount]
     top_accounts: List[ValueCount]
+    top_files: List[ValueCount]
 
 
 class GraphNode(BaseModel):

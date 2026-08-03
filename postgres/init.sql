@@ -19,7 +19,7 @@ CREATE TYPE case_status AS ENUM (
 );
 
 CREATE TYPE case_severity AS ENUM (
-    'critical', 'high', 'medium', 'low', 'informational'
+    'critical', 'high', 'medium', 'low'
 );
 
 CREATE TYPE branch_status AS ENUM (
