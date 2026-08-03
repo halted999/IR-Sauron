@@ -17,6 +17,7 @@ import { EventGraph } from '../components/Graph/EventGraph'
 import { EventModal } from '../components/Events/EventModal'
 import { EventDetail } from '../components/Events/EventDetail'
 import { IOCPanel } from '../components/Cases/IOCPanel'
+import { getIOCs } from '../api/iocs'
 import { CaseReportPanel } from '../components/Cases/CaseReportPanel'
 import { CaseAlertsPanel } from '../components/Alerts/CaseAlertsPanel'
 import { AssignLeadDropdown } from '../components/Cases/AssignLeadDropdown'
@@ -27,7 +28,7 @@ import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
 import { SauronEyeIcon } from '../components/ui/SauronEyeIcon'
 import { ElfLeafIcon } from '../components/ui/ElfLeafIcon'
-import type { Event, CaseStatus, CaseSeverity, CreateEventData } from '../types'
+import type { Event, CaseStatus, CaseSeverity, CreateEventData, IOC } from '../types'
 import {
   CASE_SEVERITY_LABELS, EVENT_TYPE_LABELS, CONFIDENCE_LABELS,
   CASE_STATUS_LABELS, getCaseStatusLabel, getCaseStatusIconVariant,
@@ -185,6 +186,52 @@ export const CasePage: React.FC = () => {
   const combinedGraphEvents = useMemo(
     () => [...events, ...attachedGraphData.flatMap((g) => g.events)],
     [events, attachedGraphData],
+  )
+
+  const [attachedIOCData, setAttachedIOCData] = useState<
+    { caseId: string; caseTitle: string; iocs: IOC[] }[]
+  >([])
+
+  // Pull in each attached (child) incident's IOCs so they're visible on the
+  // main incident's IOC tab too — same "Присоединён" pattern as alerts/graph.
+  useEffect(() => {
+    const children = currentCase?.attached_cases ?? []
+    if (children.length === 0) {
+      setAttachedIOCData([])
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      children.map(async (c) => {
+        try {
+          const childIOCs = await getIOCs(c.id)
+          return { caseId: c.id, caseTitle: c.title, iocs: childIOCs }
+        } catch {
+          return { caseId: c.id, caseTitle: c.title, iocs: [] as IOC[] }
+        }
+      }),
+    ).then((results) => {
+      if (!cancelled) setAttachedIOCData(results)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedCaseIds])
+
+  const foreignIOCs = useMemo(() => {
+    const map: Record<string, { caseId: string; caseTitle: string }> = {}
+    for (const g of attachedIOCData) {
+      for (const ioc of g.iocs) {
+        map[ioc.id] = { caseId: g.caseId, caseTitle: g.caseTitle }
+      }
+    }
+    return map
+  }, [attachedIOCData])
+
+  const combinedIOCs = useMemo(
+    () => [...iocs, ...attachedIOCData.flatMap((g) => g.iocs)],
+    [iocs, attachedIOCData],
   )
 
   const handleEventClick = useCallback((event: Event) => {
@@ -598,9 +645,11 @@ export const CasePage: React.FC = () => {
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'table' && (
               <EventTable
-                events={events}
+                events={combinedGraphEvents}
                 onEventClick={handleEventClick}
                 selectedEventId={selectedEvent?.id}
+                foreignEvents={foreignGraphEvents}
+                onForeignEventClick={(childCaseId) => navigate(`/cases/${childCaseId}`)}
               />
             )}
 
@@ -616,7 +665,14 @@ export const CasePage: React.FC = () => {
               />
             )}
 
-            {activeTab === 'iocs' && <IOCPanel iocs={iocs} caseId={currentCase.id} />}
+            {activeTab === 'iocs' && (
+              <IOCPanel
+                iocs={combinedIOCs}
+                caseId={currentCase.id}
+                foreignIOCs={foreignIOCs}
+                onForeignClick={(childCaseId) => navigate(`/cases/${childCaseId}`)}
+              />
+            )}
 
             {activeTab === 'alerts' && (
               <CaseAlertsPanel caseId={currentCase.id} attachedCases={currentCase.attached_cases} />
@@ -750,8 +806,11 @@ const EventTable: React.FC<{
   events: Event[]
   onEventClick: (e: Event) => void
   selectedEventId?: string
-}> = ({ events, onEventClick, selectedEventId }) => {
+  foreignEvents?: Record<string, { caseId: string; caseTitle: string }>
+  onForeignEventClick?: (caseId: string) => void
+}> = ({ events, onEventClick, selectedEventId, foreignEvents = {}, onForeignEventClick }) => {
   const activeEvents = events.filter((e) => !e.is_deleted)
+  const hasForeignEvents = Object.keys(foreignEvents).length > 0
 
   const EVENT_TYPE_COLOR: Record<string, string> = {
     attacker_action: 'red',
@@ -796,13 +855,16 @@ const EventTable: React.FC<{
             <Th>Достоверность</Th>
             <Th>MITRE</Th>
             <Th>Артефакты</Th>
+            {hasForeignEvents && <Th>Присоединён</Th>}
           </tr>
         </thead>
         <tbody>
-          {activeEvents.map((event, idx) => (
+          {activeEvents.map((event, idx) => {
+            const foreign = foreignEvents[event.id]
+            return (
             <tr
               key={event.id}
-              onClick={() => onEventClick(event)}
+              onClick={() => (foreign ? onForeignEventClick?.(foreign.caseId) : onEventClick(event))}
               style={{
                 borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
                 cursor: 'pointer',
@@ -893,8 +955,27 @@ const EventTable: React.FC<{
                   <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>—</span>
                 )}
               </Td>
+              {hasForeignEvents && (
+                <Td onClick={(e) => e.stopPropagation()}>
+                  {foreign ? (
+                    <button
+                      onClick={() => onForeignEventClick?.(foreign.caseId)}
+                      title="Перейти к присоединённому инциденту"
+                      style={{
+                        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                        color: 'var(--accent)', fontSize: 12, textAlign: 'left',
+                      }}
+                    >
+                      → {foreign.caseTitle}
+                    </button>
+                  ) : (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+                  )}
+                </Td>
+              )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -922,11 +1003,17 @@ const Th: React.FC<{ children?: React.ReactNode; style?: React.CSSProperties }> 
   </th>
 )
 
-const Td: React.FC<{ children?: React.ReactNode; style?: React.CSSProperties }> = ({
+const Td: React.FC<{
+  children?: React.ReactNode
+  style?: React.CSSProperties
+  onClick?: (e: React.MouseEvent<HTMLTableCellElement>) => void
+}> = ({
   children,
   style,
+  onClick,
 }) => (
   <td
+    onClick={onClick}
     style={{
       padding: '10px 14px',
       fontSize: 13,

@@ -14,6 +14,8 @@ import { Modal } from '../ui/Modal'
 interface IOCPanelProps {
   iocs: IOC[]
   caseId: string
+  foreignIOCs?: Record<string, { caseId: string; caseTitle: string }>
+  onForeignClick?: (caseId: string) => void
 }
 
 const IOC_COLOR_MAP: Record<string, string> = {
@@ -36,7 +38,8 @@ const IOC_TYPES: IOCType[] = [
   'filename',
 ]
 
-export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
+export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId, foreignIOCs = {}, onForeignClick }) => {
+  const hasForeignIOCs = Object.keys(foreignIOCs).length > 0
   const navigate = useNavigate()
   const toast = useToastStore()
   const { addIOC, removeIOC } = useCaseStore()
@@ -155,11 +158,14 @@ export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
                 <Th>Значение</Th>
                 <Th>Контекст</Th>
                 <Th>Добавлен</Th>
+                {hasForeignIOCs && <Th>Присоединён</Th>}
                 <Th style={{ width: 110 }}></Th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((ioc, idx) => (
+              {filtered.map((ioc, idx) => {
+                const foreign = foreignIOCs[ioc.id]
+                return (
                 <tr
                   key={ioc.id}
                   style={{
@@ -216,24 +222,45 @@ export const IOCPanel: React.FC<IOCPanelProps> = ({ iocs, caseId }) => {
                           В анализ
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDelete(ioc.id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--danger)',
-                          cursor: 'pointer',
-                          fontSize: 14,
-                          padding: 4,
-                        }}
-                        title="Удалить IOC"
-                      >
-                        ×
-                      </button>
+                      {!foreign && (
+                        <button
+                          onClick={() => handleDelete(ioc.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--danger)',
+                            cursor: 'pointer',
+                            fontSize: 14,
+                            padding: 4,
+                          }}
+                          title="Удалить IOC"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   </Td>
+                  {hasForeignIOCs && (
+                    <Td>
+                      {foreign ? (
+                        <button
+                          onClick={() => onForeignClick?.(foreign.caseId)}
+                          title="Перейти к присоединённому инциденту"
+                          style={{
+                            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                            color: 'var(--accent)', fontSize: 12, textAlign: 'left',
+                          }}
+                        >
+                          → {foreign.caseTitle}
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+                      )}
+                    </Td>
+                  )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
