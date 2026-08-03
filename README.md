@@ -175,6 +175,8 @@ Frontend будет доступен на `http://localhost:3000` (dev) или �
 <img width="2345" height="1251" alt="image" src="https://github.com/user-attachments/assets/cbffd62f-d7cb-47a5-a7d7-9404381e9915" />
 <img width="2356" height="652" alt="image" src="https://github.com/user-attachments/assets/f82d5f3e-02e7-4b3b-9865-fb70870ddd46" />
 <img width="2382" height="1003" alt="image" src="https://github.com/user-attachments/assets/eb541e2b-ae90-406d-b90d-efb61fe28657" />
+<img width="3370" height="1262" alt="image" src="https://github.com/user-attachments/assets/96e47740-c09c-4242-9763-d52cceccec9c" />
+<img width="2376" height="1100" alt="image" src="https://github.com/user-attachments/assets/709b359a-d43b-451b-82e5-7f9a06fad909" />
 
 
 
