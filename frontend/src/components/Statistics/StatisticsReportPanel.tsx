@@ -3,7 +3,7 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import type { StatisticsOverview, StatisticsPeriodKey, TimelineGranularity } from '../../types'
+import type { StatisticsOverview, StatisticsPeriodKey, ThreatTypeCount, TimelineGranularity } from '../../types'
 import { ALERT_STATUS_LABELS, STATISTICS_PERIOD_LABELS } from '../../types'
 import { Button } from '../ui/Button'
 import { useToastStore } from '../../store/toast'
@@ -175,43 +175,33 @@ export const StatisticsReportPanel: React.FC<StatisticsReportPanelProps> = ({ da
         </Button>
       </div>
 
-      <div ref={reportRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div ref={reportRef} style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '75%', margin: '0 auto' }}>
         <ReportCard title="Сводка">
           <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>{summaryText}</p>
         </ReportCard>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-          <ReportCard title="По статусам">
-            <ReportTable
-              headLabel="Статус"
-              rows={data.by_status.map((s) => ({ label: ALERT_STATUS_LABELS[s.status], count: s.count }))}
-            />
-          </ReportCard>
-          <ReportCard title="По типам угроз">
-            <ReportTable
-              headLabel="Тип угрозы"
-              rows={data.by_threat_type.map((t) => ({ label: t.threat_type, count: t.count }))}
-            />
-          </ReportCard>
-        </div>
+        <ReportCard title="По типам угроз">
+          <ThreatTypeDetailTable
+            rows={data.by_threat_type}
+            totalAlerts={data.total_alerts}
+          />
+        </ReportCard>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-          <ReportCard title="Топ URL">
-            <ReportTable headLabel="URL" rows={filteredUrls.map((v) => ({ label: v.value, count: v.count }))} />
-          </ReportCard>
-          <ReportCard title="Внешние IP-адреса">
-            <ReportTable headLabel="IP-адрес" rows={filteredExtIps.map((v) => ({ label: v.value, count: v.count }))} />
-          </ReportCard>
-          <ReportCard title="Внутренние IP-адреса">
-            <ReportTable headLabel="IP-адрес" rows={filteredIntIps.map((v) => ({ label: v.value, count: v.count }))} />
-          </ReportCard>
-          <ReportCard title="Учётные записи">
-            <ReportTable headLabel="Учётная запись" rows={filteredAccounts.map((v) => ({ label: v.value, count: v.count }))} />
-          </ReportCard>
-          <ReportCard title="Файлы">
-            <ReportTable headLabel="Файл" rows={filteredFiles.map((v) => ({ label: v.value, count: v.count }))} />
-          </ReportCard>
-        </div>
+        <ReportCard title="Топ URL">
+          <ReportTable headLabel="URL" rows={filteredUrls.map((v) => ({ label: v.value, count: v.count }))} />
+        </ReportCard>
+        <ReportCard title="Внешние IP-адреса">
+          <ReportTable headLabel="IP-адрес" rows={filteredExtIps.map((v) => ({ label: v.value, count: v.count }))} />
+        </ReportCard>
+        <ReportCard title="Внутренние IP-адреса">
+          <ReportTable headLabel="IP-адрес" rows={filteredIntIps.map((v) => ({ label: v.value, count: v.count }))} />
+        </ReportCard>
+        <ReportCard title="Учётные записи">
+          <ReportTable headLabel="Учётная запись" rows={filteredAccounts.map((v) => ({ label: v.value, count: v.count }))} />
+        </ReportCard>
+        <ReportCard title="Файлы">
+          <ReportTable headLabel="Файл" rows={filteredFiles.map((v) => ({ label: v.value, count: v.count }))} />
+        </ReportCard>
 
         <ReportCard title="Динамика по времени">
           {data.timeline.length === 0 ? (
@@ -241,6 +231,64 @@ const ReportCard: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
     {children}
   </div>
 )
+
+const THREAT_BAR_COLOR = '#58a6ff'
+
+const ThreatTypeDetailTable: React.FC<{ rows: ThreatTypeCount[]; totalAlerts: number }> = ({ rows, totalAlerts }) => {
+  if (rows.length === 0) {
+    return <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Нет данных</p>
+  }
+  const maxCount = Math.max(...rows.map((r) => r.count))
+  return (
+    <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 32 }}>
+              №
+            </th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
+              Тип угрозы
+            </th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 70 }}>
+              Кол-во
+            </th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 60 }}>
+              Доля
+            </th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 500, borderBottom: '1px solid var(--border)', width: 200 }}>
+              Распределение
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => {
+            const pct = totalAlerts > 0 ? Math.round((row.count / totalAlerts) * 100) : 0
+            const barWidth = maxCount > 0 ? Math.round((row.count / maxCount) * 100) : 0
+            return (
+              <tr key={row.threat_type} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{idx + 1}</td>
+                <td style={{ padding: '6px 8px', wordBreak: 'break-all' }}>{row.threat_type}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.count}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>
+                  {pct}%
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <div style={{ background: 'var(--bg-tertiary)', borderRadius: 4, height: 10, overflow: 'hidden' }}>
+                    <div style={{ width: `${barWidth}%`, height: '100%', background: THREAT_BAR_COLOR, borderRadius: 4 }} />
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>
+        Всего типов угроз: {rows.length} · Всего алертов: {totalAlerts}
+      </p>
+    </div>
+  )
+}
 
 const ReportTable: React.FC<{ headLabel: string; rows: { label: string; count: number }[] }> = ({ headLabel, rows }) => {
   if (rows.length === 0) {
