@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useAlertStore } from '../store/alert'
@@ -15,7 +15,7 @@ import { AppLayout } from '../components/Layout/AppLayout'
 import { AlertModal } from '../components/Alerts/AlertModal'
 import { AlertRulesModal } from '../components/Alerts/AlertRulesModal'
 import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
-import { AssignUserModal } from '../components/Alerts/AssignUserModal'
+import { ProcessAlertsModal } from '../components/Alerts/ProcessAlertsModal'
 import { AttachAlertsToCaseModal } from '../components/Alerts/AttachAlertsToCaseModal'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -53,23 +53,50 @@ export const AlertsPage: React.FC = () => {
   const toast = useToastStore()
   const { alerts, total, isLoading, fetchAlerts, addAlert, updateAlertInStore, removeAlertsFromStore } = useAlertStore()
 
-  const [filterStatuses, setFilterStatuses] = useState<Set<AlertStatus>>(new Set())
-  const [filterSeverity, setFilterSeverity] = useState<string>('all')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  // Filters/pagination/search live in the URL (not just component state) so
+  // they survive navigating away (e.g. opening an alert) and back, and page
+  // reloads/bookmarks — not just clicks within this page.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const updateSearchParams = (patch: Record<string, string | null>) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null || value === '') next.delete(key)
+        else next.set(key, value)
+      }
+      return next
+    })
+  }
+
+  const [filterStatuses, setFilterStatusesState] = useState<Set<AlertStatus>>(
+    () => new Set((searchParams.get('status')?.split(',').filter(Boolean) ?? []) as AlertStatus[]),
+  )
+  const [filterSeverity, setFilterSeverityState] = useState<string>(() => searchParams.get('severity') ?? 'all')
+  const [page, setPageState] = useState(() => Number(searchParams.get('page')) || 1)
+  const [pageSize, setPageSizeState] = useState(() => Number(searchParams.get('pageSize')) || 50)
+  const [showArchive, setShowArchiveState] = useState(() => searchParams.get('archive') === '1')
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '')
   const [showModal, setShowModal] = useState(false)
   const [escalatingId, setEscalatingId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isBulkEscalating, setIsBulkEscalating] = useState(false)
   const [showRulesModal, setShowRulesModal] = useState(false)
   const [showRuleFromSelection, setShowRuleFromSelection] = useState(false)
-  const [showArchive, setShowArchive] = useState(false)
   const [deletingIds, setDeletingIds] = useState<string[] | null>(null)
   const [purgingIds, setPurgingIds] = useState<string[] | null>(null)
   const [isBulkBusy, setIsBulkBusy] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
-  const [showAssignModal, setShowAssignModal] = useState(false)
+
+  // Remembers the current filters/pagination so the "Алерты" nav link (see
+  // AppLayout) can return here with them intact instead of resetting to a
+  // bare /alerts — the URL alone doesn't help once you've navigated away to
+  // a different route (e.g. an alert's own page) and click the nav link
+  // rather than the browser's back button.
+  useEffect(() => {
+    const qs = searchParams.toString()
+    sessionStorage.setItem('irsauron:nav:alerts', qs ? `/alerts?${qs}` : '/alerts')
+  }, [searchParams])
+  const [showProcessModal, setShowProcessModal] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
   const [showAttachModal, setShowAttachModal] = useState(false)
 
@@ -101,13 +128,15 @@ export const AlertsPage: React.FC = () => {
   // the query is matched server-side (title/description/id) against the full
   // table, not just the currently-loaded page, so results beyond page 1 are
   // still found.
-  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState(() => searchParams.get('q') ?? '')
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery)
-      setPage(1)
+      setPageState(1)
+      updateSearchParams({ q: searchQuery.trim() || null, page: null })
     }, 300)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
 
   useEffect(() => {
@@ -116,24 +145,34 @@ export const AlertsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStatuses, filterSeverity, showArchive, page, pageSize, debouncedQuery])
 
+  const setPage = (p: number) => {
+    setPageState(p)
+    updateSearchParams({ page: p > 1 ? String(p) : null })
+  }
+
   const handleFilterStatusesChange = (next: Set<string>) => {
-    setFilterStatuses(next as Set<AlertStatus>)
-    setPage(1)
+    setFilterStatusesState(next as Set<AlertStatus>)
+    setPageState(1)
+    updateSearchParams({ status: next.size > 0 ? [...next].join(',') : null, page: null })
   }
 
   const handleFilterSeverityChange = (v: string) => {
-    setFilterSeverity(v)
-    setPage(1)
+    setFilterSeverityState(v)
+    setPageState(1)
+    updateSearchParams({ severity: v === 'all' ? null : v, page: null })
   }
 
   const handleToggleArchive = () => {
-    setShowArchive((v) => !v)
-    setPage(1)
+    const next = !showArchive
+    setShowArchiveState(next)
+    setPageState(1)
+    updateSearchParams({ archive: next ? '1' : null, page: null })
   }
 
   const handlePageSizeChange = (size: number) => {
-    setPageSize(size)
-    setPage(1)
+    setPageSizeState(size)
+    setPageState(1)
+    updateSearchParams({ pageSize: size !== 50 ? String(size) : null, page: null })
   }
 
   const canWrite =
@@ -171,6 +210,23 @@ export const AlertsPage: React.FC = () => {
       toast.success('Алерт отклонён')
     } catch {
       toast.error('Ошибка обновления алерта')
+    }
+  }
+
+  const handleBulkDismiss = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Отклонить ${selectedIds.size} выбранных алертов?`)) return
+    setIsBulkBusy(true)
+    try {
+      const ids = Array.from(selectedIds)
+      const updated = await Promise.all(ids.map((id) => updateAlert(id, { status: 'dismissed' })))
+      updated.forEach((a) => updateAlertInStore(a))
+      toast.success(`Отклонено алертов: ${updated.length}`)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Ошибка отклонения алертов')
+    } finally {
+      setIsBulkBusy(false)
     }
   }
 
@@ -300,7 +356,7 @@ export const AlertsPage: React.FC = () => {
       updated.forEach((a) => updateAlertInStore(a))
       toast.success(`Назначено алертов: ${updated.length}`)
       setSelectedIds(new Set())
-      setShowAssignModal(false)
+      setShowProcessModal(false)
     } catch {
       toast.error('Ошибка назначения')
     } finally {
@@ -343,21 +399,8 @@ export const AlertsPage: React.FC = () => {
                   <Button variant="primary" onClick={handleBulkEscalate} isLoading={isBulkEscalating}>
                     Создать инцидент ({selectedIds.size})
                   </Button>
-                  <Button variant="secondary" onClick={() => setShowAttachModal(true)}>
-                    Присоединить ({selectedIds.size})
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowRuleFromSelection(true)}>
-                    В правило ({selectedIds.size})
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowAssignModal(true)}>
-                    Назначить ({selectedIds.size})
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => setDeletingIds(Array.from(selectedIds))}
-                    isLoading={isBulkBusy}
-                  >
-                    В архив ({selectedIds.size})
+                  <Button variant="secondary" onClick={() => setShowProcessModal(true)}>
+                    Обработать ({selectedIds.size})
                   </Button>
                 </>
               )}
@@ -378,9 +421,14 @@ export const AlertsPage: React.FC = () => {
                 </>
               )}
               {!showArchive && (
-                <Button variant="primary" onClick={() => setShowModal(true)}>
-                  + Добавить алерт
-                </Button>
+                <>
+                  <Button variant="secondary" onClick={() => setShowRuleFromSelection(true)}>
+                    + Правило
+                  </Button>
+                  <Button variant="primary" onClick={() => setShowModal(true)}>
+                    + Добавить алерт
+                  </Button>
+                </>
               )}
             </div>
           )}
@@ -713,12 +761,25 @@ export const AlertsPage: React.FC = () => {
         }}
       />
 
-      <AssignUserModal
-        isOpen={showAssignModal}
-        onClose={() => setShowAssignModal(false)}
+      <ProcessAlertsModal
+        isOpen={showProcessModal}
+        onClose={() => setShowProcessModal(false)}
+        count={selectedIds.size}
+        assignableUsers={assignableUsers}
+        isAssigning={isAssigning}
+        onAttach={() => {
+          setShowProcessModal(false)
+          setShowAttachModal(true)
+        }}
+        onDismiss={() => {
+          setShowProcessModal(false)
+          handleBulkDismiss()
+        }}
+        onArchive={() => {
+          setShowProcessModal(false)
+          setDeletingIds(Array.from(selectedIds))
+        }}
         onAssign={handleAssign}
-        isLoading={isAssigning}
-        title={`Назначить (${selectedIds.size})`}
       />
 
       <AttachAlertsToCaseModal

@@ -388,6 +388,10 @@ class AlertRuleCreate(BaseModel):
     target_case_id: Optional[uuid.UUID] = None
     tag_value: Optional[str] = Field(None, max_length=100)
     is_enabled: bool = True
+    # Not persisted on AlertRule — consumed once by create_alert_rule to
+    # immediately run the rule against currently-existing alerts, rather
+    # than only matching alerts ingested after creation.
+    apply_to_existing: bool = False
 
     @model_validator(mode="after")
     def _validate(self) -> "AlertRuleCreate":
@@ -456,6 +460,9 @@ class AlertRuleFromSelectionRequest(BaseModel):
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID] = None
     tag_value: Optional[str] = Field(None, max_length=100)
+    # If set, also apply the rule to any other currently-existing alert that
+    # matches its criteria, not just the explicitly selected alert_ids.
+    apply_to_existing: bool = False
 
     @model_validator(mode="after")
     def _validate(self) -> "AlertRuleFromSelectionRequest":

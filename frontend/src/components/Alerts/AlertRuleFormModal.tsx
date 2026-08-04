@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { getCases } from '../../api/cases'
-import { createAlertRule, createAlertRuleFromSelection, previewAlertRuleMatches } from '../../api/alertRules'
-import type { AlertRuleAction, AlertRuleFromSelectionResult } from '../../api/alertRules'
+import {
+  createAlertRule, createAlertRuleFromSelection, previewAlertRuleMatches, updateAlertRule,
+} from '../../api/alertRules'
+import type { AlertRule, AlertRuleAction, AlertRuleFromSelectionResult } from '../../api/alertRules'
 import type { Alert, Case, CaseSeverity } from '../../types'
 import { CASE_SEVERITY_LABELS } from '../../types'
 
@@ -12,6 +14,7 @@ interface AlertRuleFormModalProps {
   onClose: () => void
   onSaved: (result?: AlertRuleFromSelectionResult) => void
   selectedAlerts?: Alert[]
+  editingRule?: AlertRule | null
 }
 
 function commonValue<T>(values: T[]): T | undefined {
@@ -34,6 +37,7 @@ const DEFAULT_FORM = {
   targetMode: 'new' as 'new' | 'existing',
   targetCaseId: '',
   tagValue: '',
+  applyToExisting: false,
 }
 
 export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
@@ -41,6 +45,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
   onClose,
   onSaved,
   selectedAlerts,
+  editingRule,
 }) => {
   const [form, setForm] = useState(DEFAULT_FORM)
   const [cases, setCases] = useState<Case[]>([])
@@ -50,13 +55,31 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const previewRequestId = useRef(0)
 
-  const isFromSelection = !!selectedAlerts && selectedAlerts.length > 0
+  const isEditing = !!editingRule
+  const isFromSelection = !isEditing && !!selectedAlerts && selectedAlerts.length > 0
   const hasAnyCriteria = form.useSource || form.useSeverity || form.useTitle || form.useDescription
 
   useEffect(() => {
     if (!isOpen) return
     setError('')
-    if (isFromSelection && selectedAlerts) {
+    if (editingRule) {
+      setForm({
+        ...DEFAULT_FORM,
+        name: editingRule.name,
+        useSource: !!editingRule.match_source,
+        matchSource: editingRule.match_source ?? '',
+        useSeverity: !!editingRule.match_severity,
+        matchSeverity: editingRule.match_severity ?? 'medium',
+        useTitle: !!editingRule.match_title_contains,
+        matchTitleContains: editingRule.match_title_contains ?? '',
+        useDescription: !!editingRule.match_description_contains,
+        matchDescriptionContains: editingRule.match_description_contains ?? '',
+        action: editingRule.action,
+        targetMode: editingRule.target_case_id ? 'existing' : 'new',
+        targetCaseId: editingRule.target_case_id ?? '',
+        tagValue: editingRule.tag_value ?? '',
+      })
+    } else if (isFromSelection && selectedAlerts) {
       const commonSource = commonValue(selectedAlerts.map((a) => a.source ?? ''))
       const commonSeverity = commonValue(selectedAlerts.map((a) => a.severity))
       setForm({
@@ -161,15 +184,19 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
     setIsSaving(true)
     setError('')
     try {
-      if (isFromSelection && selectedAlerts) {
+      if (isEditing && editingRule) {
+        await updateAlertRule(editingRule.id, basePayload)
+        onSaved()
+      } else if (isFromSelection && selectedAlerts) {
         const result = await createAlertRuleFromSelection({
           ...basePayload,
           alert_ids: selectedAlerts.map((a) => a.id),
+          apply_to_existing: form.applyToExisting,
         })
         onSaved(result)
       } else {
-        await createAlertRule(basePayload)
-        onSaved()
+        const rule = await createAlertRule({ ...basePayload, apply_to_existing: form.applyToExisting })
+        onSaved(form.applyToExisting ? { rule, applied_count: rule.applied_count } : undefined)
       }
       onClose()
     } catch {
@@ -183,7 +210,13 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isFromSelection ? `Новое правило из ${selectedAlerts?.length ?? 0} алертов` : 'Новое правило'}
+      title={
+        isEditing
+          ? `Изменить правило «${editingRule?.name}»`
+          : isFromSelection
+            ? `Новое правило из ${selectedAlerts?.length ?? 0} алертов`
+            : 'Новое правило'
+      }
       width={520}
       footer={
         <>
@@ -191,7 +224,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
             Отмена
           </Button>
           <Button variant="primary" onClick={handleSubmit} isLoading={isSaving}>
-            {isFromSelection ? 'Создать и применить' : 'Создать'}
+            {isEditing ? 'Сохранить' : isFromSelection || form.applyToExisting ? 'Создать и применить' : 'Создать'}
           </Button>
         </>
       }
@@ -304,6 +337,22 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
                 ? 'Не удалось проверить совпадения'
                 : `Совпадает с текущими условиями: ${matchPreviewCount} алерт(ов)`}
           </div>
+        )}
+
+        {!isEditing && hasAnyCriteria && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.applyToExisting}
+              onChange={(e) => setField('applyToExisting', e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            <span style={{ fontSize: 13 }}>
+              {isFromSelection
+                ? 'Также применить к другим существующим алертам, подходящим под условия'
+                : 'Применить к существующим алертам'}
+            </span>
+          </label>
         )}
 
         <div>

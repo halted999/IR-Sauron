@@ -116,10 +116,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
         {/* Nav */}
         <nav style={{ display: 'flex', gap: 4 }}>
-          <NavLink to="/alerts" style={navLinkStyle}>
+          <NavLink to={sessionStorage.getItem('irsauron:nav:alerts') || '/alerts'} style={navLinkStyle}>
             Алерты
           </NavLink>
-          <NavLink to="/dashboard" style={navLinkStyle}>
+          <NavLink to={sessionStorage.getItem('irsauron:nav:dashboard') || '/dashboard'} style={navLinkStyle}>
             Инциденты
           </NavLink>
           <NavLink to="/statistics" style={navLinkStyle}>

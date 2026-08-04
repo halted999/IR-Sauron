@@ -36,6 +36,7 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
   const [rules, setRules] = useState<AlertRule[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingRule, setEditingRule] = useState<AlertRule | null>(null)
   const [deletingRule, setDeletingRule] = useState<AlertRule | null>(null)
 
   const load = () => {
@@ -86,7 +87,14 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
         }
       >
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setEditingRule(null)
+              setShowForm(true)
+            }}
+          >
             + Создать правило
           </Button>
         </div>
@@ -137,9 +145,20 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
                       )}
                     </td>
                     <td style={tdStyle}>
-                      <button onClick={() => setDeletingRule(r)} style={linkDangerStyle}>
-                        Удалить
-                      </button>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          onClick={() => {
+                            setEditingRule(r)
+                            setShowForm(true)
+                          }}
+                          style={linkStyle}
+                        >
+                          Изменить
+                        </button>
+                        <button onClick={() => setDeletingRule(r)} style={linkDangerStyle}>
+                          Удалить
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -151,9 +170,19 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
 
       <AlertRuleFormModal
         isOpen={showForm}
-        onClose={() => setShowForm(false)}
-        onSaved={() => {
-          toast.success('Правило создано')
+        onClose={() => {
+          setShowForm(false)
+          setEditingRule(null)
+        }}
+        editingRule={editingRule}
+        onSaved={(result) => {
+          if (editingRule) {
+            toast.success('Правило изменено')
+          } else {
+            toast.success(
+              result ? `Правило создано, применено к ${result.applied_count} алертам` : 'Правило создано',
+            )
+          }
           load()
         }}
       />
@@ -187,6 +216,16 @@ const tdStyle: React.CSSProperties = {
   fontSize: 13,
   color: 'var(--text-primary)',
   verticalAlign: 'middle',
+}
+
+const linkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: 'var(--accent)',
+  fontSize: 12,
+  cursor: 'pointer',
+  padding: 0,
+  fontFamily: 'inherit',
 }
 
 const linkDangerStyle: React.CSSProperties = {

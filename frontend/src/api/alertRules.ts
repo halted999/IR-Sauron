@@ -31,6 +31,7 @@ export interface CreateAlertRuleData {
   target_case_id?: string
   tag_value?: string
   is_enabled?: boolean
+  apply_to_existing?: boolean
 }
 
 export type UpdateAlertRuleData = Partial<CreateAlertRuleData>
@@ -45,6 +46,7 @@ export interface AlertRuleFromSelectionData {
   action: AlertRuleAction
   target_case_id?: string
   tag_value?: string
+  apply_to_existing?: boolean
 }
 
 export interface AlertRuleFromSelectionResult {

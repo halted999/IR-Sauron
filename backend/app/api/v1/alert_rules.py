@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import log_action
 from app.core.rbac import require_manage_alert_rules
 from app.database import get_db
-from app.models import Alert, AlertRule, User
+from app.models import AlertRule, User
 from app.schemas import (
     AlertRuleCreate, AlertRuleFromSelectionRequest, AlertRuleFromSelectionResponse,
     AlertRuleMatchPreviewRequest, AlertRuleMatchPreviewResponse, AlertRuleResponse, AlertRuleUpdate,
 )
-from app.services.alert_rules import MatchCriteria, apply_rule_to_alerts, count_matching_alerts
+from app.services.alert_rules import (
+    MatchCriteria, apply_rule_to_existing_matches,
+    apply_rule_to_selection_and_existing, count_matching_alerts,
+)
 
 router = APIRouter(prefix="/alert-rules", tags=["alert-rules"])
 
@@ -42,14 +45,24 @@ async def create_alert_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_manage_alert_rules)],
 ) -> AlertRule:
-    rule = AlertRule(**payload.model_dump(), created_by=current_user.id)
+    payload_data = payload.model_dump()
+    apply_to_existing = payload_data.pop("apply_to_existing")
+    rule = AlertRule(**payload_data, created_by=current_user.id)
     db.add(rule)
     await db.flush()
+
+    applied_count = None
+    if apply_to_existing:
+        applied_count = await apply_rule_to_existing_matches(db, rule, current_user.id)
 
     await log_action(
         db=db, user_id=current_user.id, case_id=None,
         action="create", object_type="alert_rule", object_id=str(rule.id),
-        details={"name": rule.name, "action": rule.action.value}, request=request,
+        details={
+            "name": rule.name, "action": rule.action.value,
+            **({"applied_to_existing": applied_count} if apply_to_existing else {}),
+        },
+        request=request,
     )
 
     await db.flush()
@@ -125,14 +138,17 @@ async def create_alert_rule_from_selection(
     db.add(rule)
     await db.flush()
 
-    result = await db.execute(select(Alert).where(Alert.id.in_(payload.alert_ids)))
-    alerts = list(result.scalars().all())
-    applied_count = await apply_rule_to_alerts(db, rule, alerts, current_user.id)
+    applied_count = await apply_rule_to_selection_and_existing(
+        db, rule, payload.alert_ids, payload.apply_to_existing, current_user.id,
+    )
 
     await log_action(
         db=db, user_id=current_user.id, case_id=None,
         action="create_from_selection", object_type="alert_rule", object_id=str(rule.id),
-        details={"name": rule.name, "alert_ids": [str(a.id) for a in alerts], "applied_count": applied_count},
+        details={
+            "name": rule.name, "alert_ids": [str(i) for i in payload.alert_ids],
+            "apply_to_existing": payload.apply_to_existing, "applied_count": applied_count,
+        },
         request=request,
     )
 

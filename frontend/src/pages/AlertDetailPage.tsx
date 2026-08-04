@@ -195,6 +195,20 @@ export const AlertDetailPage: React.FC = () => {
     }
   }
 
+  const handleRestoreToNew = async () => {
+    if (!alert) return
+    setIsActing(true)
+    try {
+      const updated = await updateAlert(alert.id, { status: 'new' })
+      applyUpdate(updated)
+      toast.success('Алерту возвращён статус «Новый»')
+    } catch {
+      toast.error('Ошибка обновления алерта')
+    } finally {
+      setIsActing(false)
+    }
+  }
+
   const handleEscalate = async () => {
     if (!alert) return
     if (!confirm(`Эскалировать алерт "${alert.title}" в новый инцидент?`)) return
@@ -388,7 +402,11 @@ export const AlertDetailPage: React.FC = () => {
                       </Button>
                     </>
                   )
-                ) : alert.status === 'dismissed' || alert.status === 'archived' ? null : (
+                ) : alert.status === 'dismissed' || alert.status === 'archived' ? (
+                  <Button variant="secondary" size="sm" onClick={handleRestoreToNew} isLoading={isActing}>
+                    Вернуть в новые
+                  </Button>
+                ) : (
                   <>
                     <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
                       Эскалировать

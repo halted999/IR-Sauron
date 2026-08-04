@@ -170,3 +170,37 @@ async def apply_rule_to_alerts(
         await _apply(db, rule, alert, actor_user_id)
         applied += 1
     return applied
+
+
+async def apply_rule_to_existing_matches(
+    db: AsyncSession, rule: AlertRule, actor_user_id: Optional[uuid.UUID]
+) -> int:
+    """Run a freshly-created rule against every currently-active alert that
+    matches its own criteria — used by the "apply to existing alerts"
+    checkbox on rule creation, so the rule isn't purely forward-looking."""
+    result = await db.execute(select(Alert).where(Alert.is_deleted.is_(False)))
+    matching = [alert for alert in result.scalars().all() if _matches(alert, rule)]
+    return await apply_rule_to_alerts(db, rule, matching, actor_user_id)
+
+
+async def apply_rule_to_selection_and_existing(
+    db: AsyncSession,
+    rule: AlertRule,
+    alert_ids: List[uuid.UUID],
+    apply_to_existing: bool,
+    actor_user_id: Optional[uuid.UUID],
+) -> int:
+    """Force-apply to the explicitly selected alerts, optionally unioned with
+    every other currently-active alert matching the rule's own criteria —
+    deduped so an alert that's both selected and a criteria match isn't
+    processed (and counted) twice."""
+    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
+    combined = {alert.id: alert for alert in result.scalars().all()}
+
+    if apply_to_existing:
+        all_result = await db.execute(select(Alert).where(Alert.is_deleted.is_(False)))
+        for alert in all_result.scalars().all():
+            if alert.id not in combined and _matches(alert, rule):
+                combined[alert.id] = alert
+
+    return await apply_rule_to_alerts(db, rule, list(combined.values()), actor_user_id)

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useCaseStore } from '../store/case'
@@ -68,15 +68,40 @@ export const DashboardPage: React.FC = () => {
   const toast = useToastStore()
   const { cases, total, isLoading, fetchCases } = useCaseStore()
 
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [filterStatuses, setFilterStatuses] = useState<Set<CaseStatus>>(new Set())
-  const [filterSeverity, setFilterSeverity] = useState<string>('all')
-  const [showArchived, setShowArchived] = useState(false)
+  // Filters/pagination/search live in the URL (not just component state) so
+  // they survive navigating away (e.g. opening a case) and back, and page
+  // reloads/bookmarks — not just clicks within this page.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const updateSearchParams = (patch: Record<string, string | null>) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null || value === '') next.delete(key)
+        else next.set(key, value)
+      }
+      return next
+    })
+  }
+
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('q') ?? '')
+  const [filterStatuses, setFilterStatusesState] = useState<Set<CaseStatus>>(
+    () => new Set((searchParams.get('status')?.split(',').filter(Boolean) ?? []) as CaseStatus[]),
+  )
+  const [filterSeverity, setFilterSeverityState] = useState<string>(() => searchParams.get('severity') ?? 'all')
+  const [showArchived, setShowArchivedState] = useState(() => searchParams.get('archived') === '1')
   const [showModal, setShowModal] = useState(false)
   const [editingCase, setEditingCase] = useState<Case | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [page, setPageState] = useState(() => Number(searchParams.get('page')) || 1)
+  const [pageSize, setPageSizeState] = useState(() => Number(searchParams.get('pageSize')) || 50)
+
+  // Remembers the current filters/pagination so the "Инциденты" nav link
+  // (see AppLayout) can return here with them intact instead of resetting
+  // to a bare /dashboard — see the matching comment in AlertsPage.tsx.
+  useEffect(() => {
+    const qs = searchParams.toString()
+    sessionStorage.setItem('irsauron:nav:dashboard', qs ? `/dashboard?${qs}` : '/dashboard')
+  }, [searchParams])
 
   // Debounce free-text search — it's matched server-side against the title
   // and against curated IOCs (IP/account/file/domain/hash) recorded on each
@@ -84,9 +109,11 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search.trim())
-      setPage(1)
+      setPageState(1)
+      updateSearchParams({ q: search.trim() || null, page: null })
     }, 300)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
 
   // The query is parsed here purely to show an inline syntax error next to
@@ -110,24 +137,34 @@ export const DashboardPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStatuses, filterSeverity, debouncedSearch, searchKql, showArchived, page, pageSize])
 
+  const setPage = (p: number) => {
+    setPageState(p)
+    updateSearchParams({ page: p > 1 ? String(p) : null })
+  }
+
   const handleToggleShowArchived = () => {
-    setShowArchived((v) => !v)
-    setPage(1)
+    const next = !showArchived
+    setShowArchivedState(next)
+    setPageState(1)
+    updateSearchParams({ archived: next ? '1' : null, page: null })
   }
 
   const handleFilterStatusesChange = (next: Set<string>) => {
-    setFilterStatuses(next as Set<CaseStatus>)
-    setPage(1)
+    setFilterStatusesState(next as Set<CaseStatus>)
+    setPageState(1)
+    updateSearchParams({ status: next.size > 0 ? [...next].join(',') : null, page: null })
   }
 
   const handleFilterSeverityChange = (v: string) => {
-    setFilterSeverity(v)
-    setPage(1)
+    setFilterSeverityState(v)
+    setPageState(1)
+    updateSearchParams({ severity: v === 'all' ? null : v, page: null })
   }
 
   const handlePageSizeChange = (size: number) => {
-    setPageSize(size)
-    setPage(1)
+    setPageSizeState(size)
+    setPageState(1)
+    updateSearchParams({ pageSize: size !== 50 ? String(size) : null, page: null })
   }
 
   const handleSaveCase = async (data: CreateCaseData) => {
