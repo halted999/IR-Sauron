@@ -6,8 +6,7 @@ import {
   createAlertRule, createAlertRuleFromSelection, previewAlertRuleMatches, updateAlertRule,
 } from '../../api/alertRules'
 import type { AlertRule, AlertRuleAction, AlertRuleFromSelectionResult } from '../../api/alertRules'
-import type { Alert, Case, CaseSeverity } from '../../types'
-import { CASE_SEVERITY_LABELS } from '../../types'
+import type { Alert, Case } from '../../types'
 
 interface AlertRuleFormModalProps {
   isOpen: boolean
@@ -27,17 +26,83 @@ const DEFAULT_FORM = {
   name: '',
   useSource: false,
   matchSource: '',
-  useSeverity: false,
-  matchSeverity: 'medium' as CaseSeverity,
   useTitle: false,
-  matchTitleContains: '',
+  matchTitleContains: [] as string[],
   useDescription: false,
-  matchDescriptionContains: '',
+  matchDescriptionContains: [] as string[],
   action: 'suppress' as AlertRuleAction,
   targetMode: 'new' as 'new' | 'existing',
   targetCaseId: '',
   tagValue: '',
   applyToExisting: false,
+}
+
+const MultiValueInput: React.FC<{
+  values: string[]
+  onChange: (values: string[]) => void
+  disabled?: boolean
+  placeholder?: string
+}> = ({ values, onChange, disabled, placeholder }) => {
+  const [draft, setDraft] = useState('')
+
+  const addValue = () => {
+    const trimmed = draft.trim()
+    if (!trimmed || values.includes(trimmed)) return
+    onChange([...values, trimmed])
+    setDraft('')
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          value={draft}
+          disabled={disabled}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              addValue()
+            }
+          }}
+          placeholder={placeholder}
+          style={{ flex: 1 }}
+        />
+        <Button type="button" variant="secondary" size="sm" onClick={addValue} disabled={disabled || !draft.trim()}>
+          Добавить
+        </Button>
+      </div>
+      {values.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {values.map((v) => (
+            <span
+              key={v}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 12, background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: '2px 4px 2px 8px',
+              }}
+            >
+              {v}
+              <button
+                type="button"
+                onClick={() => onChange(values.filter((x) => x !== v))}
+                disabled={disabled}
+                title="Удалить"
+                style={{
+                  background: 'none', border: 'none', cursor: disabled ? 'default' : 'pointer',
+                  color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1, padding: '0 2px',
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
@@ -57,7 +122,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
 
   const isEditing = !!editingRule
   const isFromSelection = !isEditing && !!selectedAlerts && selectedAlerts.length > 0
-  const hasAnyCriteria = form.useSource || form.useSeverity || form.useTitle || form.useDescription
+  const hasAnyCriteria = form.useSource || form.useTitle || form.useDescription
 
   useEffect(() => {
     if (!isOpen) return
@@ -68,12 +133,10 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
         name: editingRule.name,
         useSource: !!editingRule.match_source,
         matchSource: editingRule.match_source ?? '',
-        useSeverity: !!editingRule.match_severity,
-        matchSeverity: editingRule.match_severity ?? 'medium',
-        useTitle: !!editingRule.match_title_contains,
-        matchTitleContains: editingRule.match_title_contains ?? '',
-        useDescription: !!editingRule.match_description_contains,
-        matchDescriptionContains: editingRule.match_description_contains ?? '',
+        useTitle: (editingRule.match_title_contains?.length ?? 0) > 0,
+        matchTitleContains: editingRule.match_title_contains ?? [],
+        useDescription: (editingRule.match_description_contains?.length ?? 0) > 0,
+        matchDescriptionContains: editingRule.match_description_contains ?? [],
         action: editingRule.action,
         targetMode: editingRule.target_case_id ? 'existing' : 'new',
         targetCaseId: editingRule.target_case_id ?? '',
@@ -81,14 +144,11 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
       })
     } else if (isFromSelection && selectedAlerts) {
       const commonSource = commonValue(selectedAlerts.map((a) => a.source ?? ''))
-      const commonSeverity = commonValue(selectedAlerts.map((a) => a.severity))
       setForm({
         ...DEFAULT_FORM,
         name: `Правило из ${selectedAlerts.length} алертов`,
         useSource: !!commonSource,
         matchSource: commonSource || '',
-        useSeverity: !!commonSeverity,
-        matchSeverity: commonSeverity ?? 'medium',
       })
     } else {
       setForm(DEFAULT_FORM)
@@ -115,11 +175,9 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
     const timer = setTimeout(() => {
       previewAlertRuleMatches({
         match_source: form.useSource ? form.matchSource.trim() || undefined : undefined,
-        match_severity: form.useSeverity ? form.matchSeverity : undefined,
-        match_title_contains: form.useTitle ? form.matchTitleContains.trim() || undefined : undefined,
-        match_description_contains: form.useDescription
-          ? form.matchDescriptionContains.trim() || undefined
-          : undefined,
+        match_title_contains: form.useTitle && form.matchTitleContains.length > 0 ? form.matchTitleContains : undefined,
+        match_description_contains:
+          form.useDescription && form.matchDescriptionContains.length > 0 ? form.matchDescriptionContains : undefined,
       })
         .then((count) => {
           if (requestId === previewRequestId.current) setMatchPreviewCount(count)
@@ -137,8 +195,6 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
     hasAnyCriteria,
     form.useSource,
     form.matchSource,
-    form.useSeverity,
-    form.matchSeverity,
     form.useTitle,
     form.matchTitleContains,
     form.useDescription,
@@ -154,7 +210,7 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
       setError('Укажите название правила')
       return
     }
-    if (!form.useSource && !form.useSeverity && !form.useTitle && !form.useDescription) {
+    if (!form.useSource && !form.useTitle && !form.useDescription) {
       setError('Выберите хотя бы один признак для сопоставления')
       return
     }
@@ -170,11 +226,9 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
     const basePayload = {
       name: form.name.trim(),
       match_source: form.useSource ? form.matchSource.trim() || undefined : undefined,
-      match_severity: form.useSeverity ? form.matchSeverity : undefined,
-      match_title_contains: form.useTitle ? form.matchTitleContains.trim() || undefined : undefined,
-      match_description_contains: form.useDescription
-        ? form.matchDescriptionContains.trim() || undefined
-        : undefined,
+      match_title_contains: form.useTitle && form.matchTitleContains.length > 0 ? form.matchTitleContains : undefined,
+      match_description_contains:
+        form.useDescription && form.matchDescriptionContains.length > 0 ? form.matchDescriptionContains : undefined,
       action: form.action,
       target_case_id:
         form.action === 'escalate' && form.targetMode === 'existing' ? form.targetCaseId : undefined,
@@ -243,6 +297,9 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
           Признаки для сопоставления (выберите хотя бы один)
         </div>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -8 }}>
+          Для «Заголовок»/«Описание» можно добавить несколько подстрок — совпадение по любой из них
+        </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
           <input
@@ -262,61 +319,35 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
           />
         </label>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={form.useSeverity}
-            onChange={(e) => setField('useSeverity', e.target.checked)}
-            style={{ width: 'auto' }}
-          />
-          <span style={{ fontSize: 13, minWidth: 110 }}>Критичность:</span>
-          <select
-            value={form.matchSeverity}
-            disabled={!form.useSeverity}
-            onChange={(e) => setField('matchSeverity', e.target.value as CaseSeverity)}
-            style={{ flex: 1 }}
-          >
-            {Object.entries(CASE_SEVERITY_LABELS).map(([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={form.useTitle}
             onChange={(e) => setField('useTitle', e.target.checked)}
-            style={{ width: 'auto' }}
+            style={{ width: 'auto', marginTop: 6 }}
           />
-          <span style={{ fontSize: 13, minWidth: 110 }}>Заголовок содержит:</span>
-          <input
-            type="text"
-            value={form.matchTitleContains}
+          <span style={{ fontSize: 13, minWidth: 110, marginTop: 6 }}>Заголовок содержит:</span>
+          <MultiValueInput
+            values={form.matchTitleContains}
+            onChange={(values) => setField('matchTitleContains', values)}
             disabled={!form.useTitle}
-            onChange={(e) => setField('matchTitleContains', e.target.value)}
-            placeholder="Подстрока"
-            style={{ flex: 1 }}
+            placeholder="Подстрока — Enter или «Добавить»"
           />
         </label>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={form.useDescription}
             onChange={(e) => setField('useDescription', e.target.checked)}
-            style={{ width: 'auto' }}
+            style={{ width: 'auto', marginTop: 6 }}
           />
-          <span style={{ fontSize: 13, minWidth: 110 }}>Описание содержит:</span>
-          <input
-            type="text"
-            value={form.matchDescriptionContains}
+          <span style={{ fontSize: 13, minWidth: 110, marginTop: 6 }}>Описание содержит:</span>
+          <MultiValueInput
+            values={form.matchDescriptionContains}
+            onChange={(values) => setField('matchDescriptionContains', values)}
             disabled={!form.useDescription}
-            onChange={(e) => setField('matchDescriptionContains', e.target.value)}
-            placeholder="Подстрока"
-            style={{ flex: 1 }}
+            placeholder="Подстрока — Enter или «Добавить»"
           />
         </label>
 

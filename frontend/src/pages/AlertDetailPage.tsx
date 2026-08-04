@@ -353,7 +353,7 @@ export const AlertDetailPage: React.FC = () => {
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: 20, fontWeight: 700 }}>{alert.title}</h1>
+              <h1 style={{ fontSize: 20, fontWeight: 700, wordBreak: 'break-word' }}>{alert.title}</h1>
               <Badge
                 color={SEVERITY_COLOR[alert.severity] as 'red'}
                 label={CASE_SEVERITY_LABELS[alert.severity]}

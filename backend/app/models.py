@@ -812,8 +812,12 @@ class AlertRule(Base):
     match_severity: Mapped[Optional[CaseSeverity]] = mapped_column(
         SAEnum(CaseSeverity, name="case_severity", create_type=False), nullable=True
     )
-    match_title_contains: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    match_description_contains: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # Lists so a rule can match any one of several alternative substrings
+    # (OR semantics) — e.g. title contains "malware" OR "trojan".
+    match_title_contains: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
+    match_description_contains: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
 
     action: Mapped[AlertRuleAction] = mapped_column(
         SAEnum(AlertRuleAction, name="alert_rule_action", create_type=False), nullable=False

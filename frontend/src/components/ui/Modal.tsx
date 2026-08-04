@@ -45,9 +45,6 @@ export const Modal: React.FC<ModalProps> = ({
         zIndex: 1000,
         padding: 16,
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
     >
       <div
         style={{

@@ -6,7 +6,7 @@ import { useAlertStore } from '../store/alert'
 import { useToastStore } from '../store/toast'
 import { useAuthStore } from '../store/auth'
 import {
-  createAlert, updateAlert, escalateAlert, escalateAlertsBulk,
+  createAlert, updateAlert, escalateAlertsBulk,
   deleteAlertsBulk, restoreAlertsBulk, purgeAlertsBulk, assignAlertsBulk,
 } from '../api/alerts'
 import { getAssignableUsers } from '../api/users'
@@ -77,7 +77,6 @@ export const AlertsPage: React.FC = () => {
   const [showArchive, setShowArchiveState] = useState(() => searchParams.get('archive') === '1')
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '')
   const [showModal, setShowModal] = useState(false)
-  const [escalatingId, setEscalatingId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isBulkEscalating, setIsBulkEscalating] = useState(false)
   const [showRulesModal, setShowRulesModal] = useState(false)
@@ -192,27 +191,6 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
-  const handleTriage = async (alert: Alert) => {
-    try {
-      const updated = await updateAlert(alert.id, { status: 'triaged' })
-      updateAlertInStore(updated)
-      toast.success('Алерт взят в работу')
-    } catch {
-      toast.error('Ошибка обновления алерта')
-    }
-  }
-
-  const handleDismiss = async (alert: Alert) => {
-    if (!confirm(`Отклонить алерт "${alert.title}"?`)) return
-    try {
-      const updated = await updateAlert(alert.id, { status: 'dismissed' })
-      updateAlertInStore(updated)
-      toast.success('Алерт отклонён')
-    } catch {
-      toast.error('Ошибка обновления алерта')
-    }
-  }
-
   const handleBulkDismiss = async () => {
     if (selectedIds.size === 0) return
     if (!confirm(`Отклонить ${selectedIds.size} выбранных алертов?`)) return
@@ -227,21 +205,6 @@ export const AlertsPage: React.FC = () => {
       toast.error('Ошибка отклонения алертов')
     } finally {
       setIsBulkBusy(false)
-    }
-  }
-
-  const handleEscalate = async (alert: Alert) => {
-    if (!confirm(`Эскалировать алерт "${alert.title}" в новый инцидент?`)) return
-    setEscalatingId(alert.id)
-    try {
-      const newCase = await escalateAlert(alert.id, {})
-      updateAlertInStore({ ...alert, status: 'escalated', case_id: newCase.id })
-      toast.success(`Инцидент «${newCase.title}» создан из алерта`)
-      navigate(`/cases/${newCase.id}`)
-    } catch {
-      toast.error('Ошибка эскалации алерта')
-    } finally {
-      setEscalatingId(null)
     }
   }
 
@@ -364,6 +327,15 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
+  const handleCopyValue = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`Скопировано: ${value}`)
+    } catch {
+      toast.error('Не удалось скопировать')
+    }
+  }
+
   return (
     <AppLayout>
       <div style={{ padding: '24px 32px', width: '100%' }}>
@@ -390,7 +362,10 @@ export const AlertsPage: React.FC = () => {
           }}
         >
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Алерты</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              Алерты
+              <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-secondary)' }}>Всего: {total}</span>
+            </h1>
           </div>
           {canWrite && (
             <div style={{ display: 'flex', gap: 8 }}>
@@ -546,6 +521,7 @@ export const AlertsPage: React.FC = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-tertiary)' }}>
+                  <Th>Создан</Th>
                   {canWrite && (
                     <Th>
                       <input
@@ -559,13 +535,10 @@ export const AlertsPage: React.FC = () => {
                   )}
                   <Th>Номер</Th>
                   <Th>Заголовок</Th>
-                  <Th>Источник</Th>
                   <Th>Критичность</Th>
                   <Th>Статус</Th>
                   <Th>Назначено</Th>
-                  <Th>Тэги</Th>
-                  <Th>Создан</Th>
-                  {canWrite && <Th>Действия</Th>}
+                  <Th>Связанные данные</Th>
                 </tr>
               </thead>
               <tbody>
@@ -577,6 +550,9 @@ export const AlertsPage: React.FC = () => {
                       background: selectedIds.has(a.id) ? 'var(--bg-tertiary)' : 'transparent',
                     }}
                   >
+                    <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
+                    </Td>
                     {canWrite && (
                       <Td>
                         <input
@@ -611,11 +587,16 @@ export const AlertsPage: React.FC = () => {
                     <Td>
                       <Link
                         to={`/alerts/${a.id}`}
+                        title={a.title}
                         style={{
-                          display: 'block',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
                           fontWeight: 500,
                           color: 'var(--text-primary)',
                           maxWidth: 400,
+                          wordBreak: 'break-word',
                           textDecoration: 'none',
                         }}
                         onMouseEnter={(e) => {
@@ -627,23 +608,27 @@ export const AlertsPage: React.FC = () => {
                       >
                         {a.title}
                       </Link>
-                      {a.description && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: 'var(--text-secondary)',
-                            marginTop: 2,
-                            maxWidth: 400,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {a.description}
+                      {a.tags.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, maxWidth: 400 }}>
+                          {a.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              style={{
+                                fontSize: 11,
+                                padding: '1px 8px',
+                                borderRadius: 10,
+                                background: 'rgba(88,166,255,0.15)',
+                                color: 'var(--accent)',
+                                border: '1px solid rgba(88,166,255,0.4)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </Td>
-                    <Td>{a.source ?? '—'}</Td>
                     <Td>
                       <Badge
                         color={SEVERITY_COLOR[a.severity] as 'red'}
@@ -662,72 +647,8 @@ export const AlertsPage: React.FC = () => {
                       {assigneeLabel(a.assigned_to)}
                     </Td>
                     <Td>
-                      {a.tags.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 180 }}>
-                          {a.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              style={{
-                                fontSize: 11,
-                                padding: '1px 8px',
-                                borderRadius: 10,
-                                background: 'rgba(88,166,255,0.15)',
-                                color: 'var(--accent)',
-                                border: '1px solid rgba(88,166,255,0.4)',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
-                      )}
+                      <EntitiesCell alert={a} onCopy={handleCopyValue} />
                     </Td>
-                    <Td style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
-                    </Td>
-                    {canWrite && (
-                      <Td>
-                        {a.is_deleted ? (
-                          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                            Удалён {a.deleted_at ? format(new Date(a.deleted_at), 'dd.MM.yyyy HH:mm', { locale: ru }) : ''}
-                          </span>
-                        ) : a.status === 'escalated' ? (
-                          a.case_id ? (
-                            <Link to={`/cases/${a.case_id}`} style={{ ...linkBtnStyle, textDecoration: 'none' }}>
-                              Открыть инцидент
-                            </Link>
-                          ) : (
-                            <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
-                          )
-                        ) : a.status === 'dismissed' || a.status === 'archived' ? (
-                          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
-                        ) : (
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {a.status === 'new' && (
-                              <button onClick={() => handleTriage(a)} style={linkBtnStyle}>
-                                В работу
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleEscalate(a)}
-                              style={linkBtnStyle}
-                              disabled={escalatingId === a.id}
-                            >
-                              {escalatingId === a.id ? 'Эскалация…' : 'Эскалировать'}
-                            </button>
-                            <button
-                              onClick={() => handleDismiss(a)}
-                              style={{ ...linkBtnStyle, color: 'var(--danger)' }}
-                            >
-                              Отклонить
-                            </button>
-                          </div>
-                        )}
-                      </Td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -816,17 +737,6 @@ export const AlertsPage: React.FC = () => {
   )
 }
 
-const linkBtnStyle: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  color: 'var(--accent)',
-  fontSize: 12,
-  cursor: 'pointer',
-  padding: 0,
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
-}
-
 const Th: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
   <th
     style={{
@@ -860,3 +770,68 @@ const Td: React.FC<{ children?: React.ReactNode; style?: React.CSSProperties }> 
     {children}
   </td>
 )
+
+const ENTITY_GROUP_LABEL: Record<string, string> = {
+  ip: 'IP',
+  account: 'Учётка',
+  file: 'Файл',
+  url: 'URL',
+}
+
+const EntityChip: React.FC<{ value: string; onCopy: (value: string) => void }> = ({ value, onCopy }) => (
+  <button
+    type="button"
+    onClick={() => onCopy(value)}
+    title={`Скопировать для поиска: ${value}`}
+    style={{
+      display: 'inline-block',
+      maxWidth: 140,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      fontSize: 11,
+      fontFamily: 'monospace',
+      padding: '1px 6px',
+      borderRadius: 4,
+      background: 'var(--bg-tertiary)',
+      border: '1px solid var(--border)',
+      color: 'var(--text-primary)',
+      cursor: 'pointer',
+    }}
+  >
+    {value}
+  </button>
+)
+
+const EntitiesCell: React.FC<{ alert: Alert; onCopy: (value: string) => void }> = ({ alert, onCopy }) => {
+  const groups: [string, string[]][] = (
+    [
+      ['ip', [...alert.parsed_internal_ips, ...alert.parsed_external_ips]],
+      ['account', alert.parsed_accounts],
+      ['file', alert.parsed_files],
+      ['url', alert.parsed_urls],
+    ] as [string, string[]][]
+  ).filter(([, values]) => values.length > 0)
+
+  if (groups.length === 0) {
+    return <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 260 }}>
+      {groups.map(([kind, values]) => (
+        <div key={kind} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            {ENTITY_GROUP_LABEL[kind]}:
+          </span>
+          {values.slice(0, 2).map((v) => (
+            <EntityChip key={v} value={v} onCopy={onCopy} />
+          ))}
+          {values.length > 2 && (
+            <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>+{values.length - 2}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}

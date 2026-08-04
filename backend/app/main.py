@@ -309,6 +309,35 @@ async def _migrate_legacy_case_status(conn) -> None:
     await conn.execute(text("ALTER TABLE cases ALTER COLUMN verification_status DROP NOT NULL"))
 
 
+async def _migrate_alert_rule_contains_to_lists(conn) -> None:
+    """
+    match_title_contains / match_description_contains used to be a single
+    substring each; now they're JSONB lists so a rule can match any one of
+    several alternative substrings (OR semantics). Existing single-value
+    rules are wrapped into a one-element list. Idempotent: no-op once a
+    column is already jsonb.
+    """
+    for column in ("match_title_contains", "match_description_contains"):
+        is_jsonb = await conn.scalar(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'alert_rules' AND column_name = :column AND data_type = 'jsonb'"
+            ),
+            {"column": column},
+        )
+        if is_jsonb:
+            continue
+        await conn.execute(
+            text(
+                f"ALTER TABLE alert_rules ALTER COLUMN {column} TYPE JSONB "
+                f"USING (CASE WHEN {column} IS NULL OR {column} = '' THEN '[]'::jsonb "
+                f"ELSE jsonb_build_array({column}) END)"
+            )
+        )
+        await conn.execute(text(f"ALTER TABLE alert_rules ALTER COLUMN {column} SET DEFAULT '[]'::jsonb"))
+        await conn.execute(text(f"ALTER TABLE alert_rules ALTER COLUMN {column} SET NOT NULL"))
+
+
 async def _ensure_admin_user() -> None:
     """Ensure the built-in admin account exists with username=admin / password=admin."""
     async with AsyncSessionLocal() as session:
@@ -368,6 +397,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await _migrate_legacy_case_status(conn)
         await _migrate_informational_severity_to_low(conn)
+        await _migrate_alert_rule_contains_to_lists(conn)
     await _ensure_admin_user()
     await _seed_role_permissions()
 

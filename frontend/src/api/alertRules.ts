@@ -8,8 +8,8 @@ export interface AlertRule {
   name: string
   match_source?: string | null
   match_severity?: CaseSeverity | null
-  match_title_contains?: string | null
-  match_description_contains?: string | null
+  match_title_contains: string[]
+  match_description_contains: string[]
   action: AlertRuleAction
   target_case_id?: string | null
   tag_value?: string | null
@@ -25,8 +25,8 @@ export interface CreateAlertRuleData {
   name: string
   match_source?: string
   match_severity?: CaseSeverity
-  match_title_contains?: string
-  match_description_contains?: string
+  match_title_contains?: string[]
+  match_description_contains?: string[]
   action: AlertRuleAction
   target_case_id?: string
   tag_value?: string
@@ -41,8 +41,8 @@ export interface AlertRuleFromSelectionData {
   name: string
   match_source?: string
   match_severity?: CaseSeverity
-  match_title_contains?: string
-  match_description_contains?: string
+  match_title_contains?: string[]
+  match_description_contains?: string[]
   action: AlertRuleAction
   target_case_id?: string
   tag_value?: string
@@ -57,8 +57,8 @@ export interface AlertRuleFromSelectionResult {
 export interface AlertRuleMatchCriteria {
   match_source?: string
   match_severity?: CaseSeverity
-  match_title_contains?: string
-  match_description_contains?: string
+  match_title_contains?: string[]
+  match_description_contains?: string[]
 }
 
 export async function getAlertRules(): Promise<AlertRule[]> {

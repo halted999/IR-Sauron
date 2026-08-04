@@ -83,7 +83,6 @@ export const Pagination: React.FC<PaginationProps> = ({
             </option>
           ))}
         </select>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Всего: {total}</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>

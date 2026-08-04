@@ -382,8 +382,8 @@ class AlertRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     match_source: Optional[str] = Field(None, max_length=255)
     match_severity: Optional[CaseSeverity] = None
-    match_title_contains: Optional[str] = Field(None, max_length=500)
-    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    match_title_contains: List[str] = Field(default_factory=list)
+    match_description_contains: List[str] = Field(default_factory=list)
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID] = None
     tag_value: Optional[str] = Field(None, max_length=100)
@@ -422,8 +422,8 @@ class AlertRuleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     match_source: Optional[str] = Field(None, max_length=255)
     match_severity: Optional[CaseSeverity] = None
-    match_title_contains: Optional[str] = Field(None, max_length=500)
-    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    match_title_contains: List[str] = Field(default_factory=list)
+    match_description_contains: List[str] = Field(default_factory=list)
     action: Optional[AlertRuleAction] = None
     target_case_id: Optional[uuid.UUID] = None
     tag_value: Optional[str] = Field(None, max_length=100)
@@ -437,8 +437,8 @@ class AlertRuleResponse(BaseModel):
     name: str
     match_source: Optional[str]
     match_severity: Optional[CaseSeverity]
-    match_title_contains: Optional[str]
-    match_description_contains: Optional[str]
+    match_title_contains: List[str]
+    match_description_contains: List[str]
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID]
     tag_value: Optional[str]
@@ -455,8 +455,8 @@ class AlertRuleFromSelectionRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     match_source: Optional[str] = Field(None, max_length=255)
     match_severity: Optional[CaseSeverity] = None
-    match_title_contains: Optional[str] = Field(None, max_length=500)
-    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    match_title_contains: List[str] = Field(default_factory=list)
+    match_description_contains: List[str] = Field(default_factory=list)
     action: AlertRuleAction
     target_case_id: Optional[uuid.UUID] = None
     tag_value: Optional[str] = Field(None, max_length=100)
@@ -497,8 +497,8 @@ class AlertRuleFromSelectionResponse(BaseModel):
 class AlertRuleMatchPreviewRequest(BaseModel):
     match_source: Optional[str] = Field(None, max_length=255)
     match_severity: Optional[CaseSeverity] = None
-    match_title_contains: Optional[str] = Field(None, max_length=500)
-    match_description_contains: Optional[str] = Field(None, max_length=1000)
+    match_title_contains: List[str] = Field(default_factory=list)
+    match_description_contains: List[str] = Field(default_factory=list)
 
 
 class AlertRuleMatchPreviewResponse(BaseModel):

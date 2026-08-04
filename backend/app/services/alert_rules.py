@@ -1,5 +1,5 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -20,8 +20,14 @@ class MatchCriteria:
     against either a persisted rule or an in-progress (not-yet-saved) form."""
     match_source: Optional[str] = None
     match_severity: Optional[CaseSeverity] = None
-    match_title_contains: Optional[str] = None
-    match_description_contains: Optional[str] = None
+    match_title_contains: List[str] = field(default_factory=list)
+    match_description_contains: List[str] = field(default_factory=list)
+
+
+def _any_contains(terms: List[str], text: Optional[str]) -> bool:
+    """OR semantics: matches if the text contains any one of the terms."""
+    haystack = (text or "").casefold()
+    return any(term.casefold() in haystack for term in terms)
 
 
 def _matches(alert: Alert, rule: MatchCriteria) -> bool:
@@ -29,12 +35,9 @@ def _matches(alert: Alert, rule: MatchCriteria) -> bool:
         return False
     if rule.match_severity and alert.severity != rule.match_severity:
         return False
-    if rule.match_title_contains and rule.match_title_contains.casefold() not in (alert.title or "").casefold():
+    if rule.match_title_contains and not _any_contains(rule.match_title_contains, alert.title):
         return False
-    if (
-        rule.match_description_contains
-        and rule.match_description_contains.casefold() not in (alert.description or "").casefold()
-    ):
+    if rule.match_description_contains and not _any_contains(rule.match_description_contains, alert.description):
         return False
     return True
 

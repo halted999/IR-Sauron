@@ -20,8 +20,12 @@ function describeRule(rule: AlertRule): string {
   const parts: string[] = []
   if (rule.match_source) parts.push(`источник = ${rule.match_source}`)
   if (rule.match_severity) parts.push(`критичность = ${CASE_SEVERITY_LABELS[rule.match_severity]}`)
-  if (rule.match_title_contains) parts.push(`заголовок содержит «${rule.match_title_contains}»`)
-  if (rule.match_description_contains) parts.push(`описание содержит «${rule.match_description_contains}»`)
+  if (rule.match_title_contains?.length) {
+    parts.push(`заголовок содержит любое из: ${rule.match_title_contains.map((v) => `«${v}»`).join(', ')}`)
+  }
+  if (rule.match_description_contains?.length) {
+    parts.push(`описание содержит любое из: ${rule.match_description_contains.map((v) => `«${v}»`).join(', ')}`)
+  }
   return parts.join(', ') || '—'
 }
 
@@ -79,7 +83,7 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
         isOpen={isOpen}
         onClose={onClose}
         title="Правила алертов"
-        width={760}
+        width={1100}
         footer={
           <Button variant="ghost" onClick={onClose}>
             Закрыть
@@ -109,7 +113,15 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+              <colgroup>
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '34%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '11%' }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: 'var(--bg-tertiary)' }}>
                   <th style={thStyle}>Название</th>
@@ -123,11 +135,11 @@ export const AlertRulesModal: React.FC<AlertRulesModalProps> = ({ isOpen, onClos
               <tbody>
                 {rules.map((r, idx) => (
                   <tr key={r.id} style={{ borderTop: idx > 0 ? '1px solid var(--border)' : 'none' }}>
-                    <td style={tdStyle}>{r.name}</td>
-                    <td style={{ ...tdStyle, fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <td style={wrapTdStyle}>{r.name}</td>
+                    <td style={{ ...wrapTdStyle, fontSize: 12, color: 'var(--text-secondary)' }}>
                       {describeRule(r)}
                     </td>
-                    <td style={tdStyle}>{describeAction(r)}</td>
+                    <td style={wrapTdStyle}>{describeAction(r)}</td>
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
@@ -216,6 +228,12 @@ const tdStyle: React.CSSProperties = {
   fontSize: 13,
   color: 'var(--text-primary)',
   verticalAlign: 'middle',
+}
+
+const wrapTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  whiteSpace: 'normal',
+  wordBreak: 'break-word',
 }
 
 const linkStyle: React.CSSProperties = {

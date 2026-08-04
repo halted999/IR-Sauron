@@ -208,7 +208,10 @@ export const DashboardPage: React.FC = () => {
           }}
         >
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Инциденты</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              Инциденты
+              <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-secondary)' }}>Всего: {total}</span>
+            </h1>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               Управление инцидентами информационной безопасности
             </p>
