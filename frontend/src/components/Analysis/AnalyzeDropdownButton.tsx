@@ -47,7 +47,7 @@ export const AnalyzeDropdownButton: React.FC<AnalyzeDropdownButtonProps> = ({
 
   const goTo = (value: string) => {
     setIsOpen(false)
-    navigate(`/analysis?q=${encodeURIComponent(value)}&period=30d`)
+    navigate(`/analysis?q=${encodeURIComponent(value)}&period=day`)
   }
 
   return (

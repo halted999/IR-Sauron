@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { getAlerts, detachAlert } from '../../api/alerts'
@@ -33,7 +33,6 @@ const STATUS_COLOR: Record<AlertStatus, string> = {
 }
 
 export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attachedCases = [] }) => {
-  const navigate = useNavigate()
   const toast = useToastStore()
   const { user } = useAuthStore()
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -173,16 +172,13 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attach
           {alerts.map((a, idx) => (
             <tr
               key={a.id}
-              onClick={() => navigate(`/alerts/${a.id}`)}
               style={{
                 borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
-                cursor: 'pointer',
                 background: selectedIds.has(a.id) ? 'var(--bg-tertiary)' : 'transparent',
               }}
-              title="Открыть алерт"
             >
               {canWrite && (
-                <Td onClick={(e) => e.stopPropagation()}>
+                <Td>
                   <input
                     type="checkbox"
                     checked={selectedIds.has(a.id)}
@@ -192,7 +188,9 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attach
                 </Td>
               )}
               <Td>
-                <div style={{ fontWeight: 500 }}>{a.title}</div>
+                <Link to={`/alerts/${a.id}`} style={{ display: 'block', fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {a.title}
+                </Link>
                 {a.description && (
                   <div
                     style={{
@@ -225,19 +223,18 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attach
                 />
               </Td>
               {attachedCases.length > 0 && (
-                <Td onClick={(e) => e.stopPropagation()}>
+                <Td>
                   {a.case_id && a.case_id !== caseId && attachedCaseTitleById.has(a.case_id) ? (
-                    <button
-                      onClick={() => navigate(`/cases/${a.case_id}`)}
+                    <Link
+                      to={`/cases/${a.case_id}`}
                       title="Перейти к присоединённому инциденту"
                       style={{
-                        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                        color: 'var(--accent)', fontSize: 12, textAlign: 'left',
+                        color: 'var(--accent)', fontSize: 12, textDecoration: 'none',
                         display: 'flex', alignItems: 'center', gap: 4,
                       }}
                     >
                       → {attachedCaseTitleById.get(a.case_id)}
-                    </button>
+                    </Link>
                   ) : (
                     <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
                   )}
@@ -249,7 +246,7 @@ export const CaseAlertsPanel: React.FC<CaseAlertsPanelProps> = ({ caseId, attach
               <Td onClick={(e) => e.stopPropagation()}>
                 <AnalyzeDropdownButton
                   size="sm"
-                  ips={a.parsed_internal_ips}
+                  ips={[...a.parsed_internal_ips, ...a.parsed_external_ips]}
                   accounts={a.parsed_accounts}
                   files={a.parsed_files}
                 />

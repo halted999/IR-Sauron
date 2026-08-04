@@ -20,6 +20,7 @@ from app.schemas import (
     CaseParticipantResponse, CaseResponse, CaseUpdate,
 )
 from app.services.kql import KqlSyntaxError, parse_kql, reduce_node, term_to_ilike_pattern
+from app.services.notifications import notify_case_status_changed
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -201,6 +202,7 @@ async def update_case(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     update_data = payload.model_dump(exclude_unset=True)
+    old_status = case.status
     for field, value in update_data.items():
         setattr(case, field, value)
 
@@ -217,6 +219,9 @@ async def update_case(
         details=payload.model_dump(exclude_unset=True, mode="json"),
         request=request,
     )
+
+    if "status" in update_data and case.status != old_status:
+        await notify_case_status_changed(db, case, old_status.value, case.status.value)
 
     await db.flush()
     result = await db.execute(

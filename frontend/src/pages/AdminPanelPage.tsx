@@ -222,6 +222,7 @@ const NotificationsSection: React.FC = () => {
         smtp_from_email: settings.smtp_from_email,
         smtp_use_tls: settings.smtp_use_tls,
         email_notifications_enabled: settings.email_notifications_enabled,
+        email_notification_recipients: settings.email_notification_recipients,
         telegram_bot_token: settings.telegram_bot_token,
         telegram_chat_id: settings.telegram_chat_id,
         telegram_notifications_enabled: settings.telegram_notifications_enabled,
@@ -247,7 +248,7 @@ const NotificationsSection: React.FC = () => {
     <div>
       <SectionHeader
         title="Оповещения на почту и в Telegram-бота"
-        description="Настройки подключения. Реальная отправка сообщений по событиям (создание инцидента, эскалация и т.д.) в этот экран не входит — здесь только хранение конфигурации."
+        description="При включении бот/почта уведомляют о новых алертах, эскалации алерта в инцидент и смене статуса инцидента."
       />
 
       <Card>
@@ -302,6 +303,21 @@ const NotificationsSection: React.FC = () => {
               value={settings.smtp_from_email ?? ''}
               onChange={(e) => setField('smtp_from_email', e.target.value)}
               placeholder="ir-sauron@example.com"
+            />
+          </Field>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Field label="Получатели оповещений (через запятую)">
+            <input
+              type="text"
+              value={settings.email_notification_recipients.join(', ')}
+              onChange={(e) =>
+                setField(
+                  'email_notification_recipients',
+                  e.target.value.split(',').map((v) => v.trim()).filter(Boolean),
+                )
+              }
+              placeholder="soc@example.com, oncall@example.com"
             />
           </Field>
         </div>

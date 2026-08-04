@@ -30,6 +30,10 @@ type AlertGroup = 'in_case' | 'no_case'
 const ALERT_RADIUS = 9
 const CANVAS_W = 3400
 const CANVAS_H = 2300
+// Force-layout gravitates toward this point instead of the canvas center, so
+// the graph forms near the top-left corner of the view instead of the middle.
+const LAYOUT_CENTER_X = CANVAS_W * 0.25
+const LAYOUT_CENTER_Y = CANVAS_H * 0.25
 
 function hashSeed(id: string): number {
   let h = 0
@@ -53,8 +57,8 @@ function computeLayout(
     const radius = Math.min(CANVAS_W, CANVAS_H) * 0.32
     const jitter = hashSeed(n.id) % 60
     positions[n.id] = {
-      x: CANVAS_W / 2 + radius * Math.cos(angle) + jitter,
-      y: CANVAS_H / 2 + radius * Math.sin(angle) + jitter,
+      x: LAYOUT_CENTER_X + radius * Math.cos(angle) + jitter,
+      y: LAYOUT_CENTER_Y + radius * Math.sin(angle) + jitter,
     }
   })
 
@@ -89,8 +93,8 @@ function computeLayout(
         fx += (dx / dist) * force
         fy += (dy / dist) * force
       }
-      fx += (CANVAS_W / 2 - pa.x) * centerStrength
-      fy += (CANVAS_H / 2 - pa.y) * centerStrength
+      fx += (LAYOUT_CENTER_X - pa.x) * centerStrength
+      fy += (LAYOUT_CENTER_Y - pa.y) * centerStrength
       const v = velocities[a.id]
       v.x = (v.x + fx) * damping
       v.y = (v.y + fy) * damping
@@ -286,6 +290,21 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
 
     return { displayNodes, displayEdges, groupMembersById, groupEntityCountsById }
   }, [visibleNodes, visibleEdges, nodeById])
+
+  // Entity nodes (ip/account/file/ioc) that touch at least one alert already
+  // attached to an incident — used to give them the same "in an incident"
+  // bold outline as alert nodes get.
+  const entityInCaseIds = useMemo(() => {
+    const alertInCaseById = new Map<string, boolean>()
+    displayNodes.forEach((n) => {
+      if (n.kind === 'alert') alertInCaseById.set(n.id, !!n.case_id)
+    })
+    const result = new Set<string>()
+    displayEdges.forEach((e) => {
+      if (alertInCaseById.get(e.target)) result.add(e.source)
+    })
+    return result
+  }, [displayNodes, displayEdges])
 
   // Which alerts mention each entity — used by the details panel's "mentions" table.
   const mentionsByEntityId = useMemo(() => {
@@ -605,18 +624,19 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
               : entityRadius(node.degree)
             const isHovered = node.id === hoveredId
             const isEscalated = isAlert && node.status === 'escalated'
-            const inCase = isAlert && !!node.case_id
+            const inCase = isAlert ? !!node.case_id : entityInCaseIds.has(node.id)
             const title = node.kind === 'alert'
               ? isGroup
                 ? `${node.label} (нажмите, чтобы посмотреть список)`
                 : `${node.label}${inCase ? ' · в инциденте' : ' · без инцидента'}`
-              : `${ENTITY_LABEL[node.kind]}: ${node.label} (${node.degree} алертов)`
+              : `${ENTITY_LABEL[node.kind]}: ${node.label} (${node.degree} алертов)${inCase ? ' · в инциденте' : ''}`
 
             const alertBorder = isEscalated
               ? '3px solid var(--text-primary)'
               : inCase
                 ? '2px solid var(--accent)'
                 : '2px dashed var(--border)'
+            const entityBorder = inCase ? '3px solid var(--accent)' : '3px solid transparent'
 
             return (
               <React.Fragment key={node.id}>
@@ -635,7 +655,7 @@ export const CorrelationGraph: React.FC<CorrelationGraphProps> = ({ nodes, edges
                     borderRadius: isAlert ? '50%' : 6,
                     transform: isAlert ? undefined : 'rotate(45deg)',
                     background: color,
-                    border: isAlert ? alertBorder : '3px solid transparent',
+                    border: isAlert ? alertBorder : entityBorder,
                     boxSizing: 'border-box',
                     opacity: hoveredId && !isHovered ? 0.35 : 1,
                     boxShadow: isHovered ? `0 0 0 3px ${color}55` : '0 1px 4px rgba(0,0,0,0.4)',

@@ -214,11 +214,9 @@ const AlertGroupDetails: React.FC<{
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {members.map((m) => (
           <button key={m.id} onClick={() => onSelectAlert(m.id)} style={rowButtonStyle}>
-            <span style={rowLabelStyle}>{m.label}</span>
+            <span style={rowNumberStyle}>{m.id.slice(0, 8)}</span>
             {m.status && <StatusBadge status={m.status} small />}
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-              {m.case_id ? 'в инциденте' : 'без инцидента'}
-            </span>
+            <span style={rowLabelStyle}>{m.label}</span>
           </button>
         ))}
       </div>
@@ -315,5 +313,12 @@ const rowLabelStyle: React.CSSProperties = {
   flex: 1,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
+const rowNumberStyle: React.CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: 11,
+  color: 'var(--accent)',
   whiteSpace: 'nowrap',
 }

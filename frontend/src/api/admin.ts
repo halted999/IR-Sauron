@@ -10,6 +10,7 @@ export interface AppSettings {
   smtp_from_email?: string | null
   smtp_use_tls: boolean
   email_notifications_enabled: boolean
+  email_notification_recipients: string[]
   telegram_bot_token?: string | null
   telegram_chat_id?: string | null
   telegram_notifications_enabled: boolean

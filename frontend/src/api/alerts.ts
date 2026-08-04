@@ -9,6 +9,7 @@ export interface AlertsParams {
   severity?: CaseSeverity
   case_id?: string
   deleted?: boolean
+  q?: string
   skip?: number
   limit?: number
 }
@@ -59,6 +60,11 @@ export async function escalateAlert(id: string, data: EscalateAlertData): Promis
 
 export async function escalateAlertsBulk(data: BulkEscalateAlertData): Promise<Case> {
   const response = await apiClient.post<Case>('/alerts/escalate-bulk', data)
+  return response.data
+}
+
+export async function attachAlertsToCase(alertIds: string[], caseId: string): Promise<Case> {
+  const response = await apiClient.post<Case>('/alerts/attach-to-case', { alert_ids: alertIds, case_id: caseId })
   return response.data
 }
 

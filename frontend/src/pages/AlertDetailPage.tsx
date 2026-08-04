@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { getAlert, updateAlert, escalateAlert, assignAlertsBulk } from '../api/alerts'
+import { getAlert, updateAlert, escalateAlert, assignAlertsBulk, detachAlert } from '../api/alerts'
 import { getAssignableUsers } from '../api/users'
 import type { AssignableUser } from '../api/users'
 import { useAlertStore } from '../store/alert'
@@ -11,13 +11,14 @@ import { useToastStore } from '../store/toast'
 import { AppLayout } from '../components/Layout/AppLayout'
 import { AssignUserModal } from '../components/Alerts/AssignUserModal'
 import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
+import { AttachAlertsToCaseModal } from '../components/Alerts/AttachAlertsToCaseModal'
 import { SimilarAlertsPanel } from '../components/Alerts/SimilarAlertsPanel'
 import { AnalyzeDropdownButton } from '../components/Analysis/AnalyzeDropdownButton'
 import type { AlertRuleFromSelectionResult } from '../api/alertRules'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
-import type { Alert, AlertStatus, CaseSeverity } from '../types'
+import type { Alert, AlertStatus, Case, CaseSeverity } from '../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../types'
 
 const SEVERITY_COLOR: Record<CaseSeverity, string> = {
@@ -113,6 +114,7 @@ export const AlertDetailPage: React.FC = () => {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
   const [showRuleModal, setShowRuleModal] = useState(false)
+  const [showAttachModal, setShowAttachModal] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [isSavingTags, setIsSavingTags] = useState(false)
 
@@ -204,6 +206,29 @@ export const AlertDetailPage: React.FC = () => {
       navigate(`/cases/${newCase.id}`)
     } catch {
       toast.error('Ошибка эскалации алерта')
+    } finally {
+      setIsActing(false)
+    }
+  }
+
+  const handleAttached = (updatedCase: Case) => {
+    if (!alert) return
+    applyUpdate({ ...alert, status: 'escalated', case_id: updatedCase.id })
+    toast.success(`Присоединено к инциденту «${updatedCase.title}»`)
+    setShowAttachModal(false)
+    navigate(`/cases/${updatedCase.id}`)
+  }
+
+  const handleDetach = async () => {
+    if (!alert) return
+    if (!confirm(`Отсоединить алерт "${alert.title}" от инцидента?`)) return
+    setIsActing(true)
+    try {
+      const updated = await detachAlert(alert.id)
+      applyUpdate(updated)
+      toast.success('Алерт отсоединён от инцидента')
+    } catch {
+      toast.error('Ошибка отсоединения алерта')
     } finally {
       setIsActing(false)
     }
@@ -340,7 +365,7 @@ export const AlertDetailPage: React.FC = () => {
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <AnalyzeDropdownButton
-              ips={alert.parsed_internal_ips}
+              ips={[...alert.parsed_internal_ips, ...alert.parsed_external_ips]}
               accounts={alert.parsed_accounts}
               files={alert.parsed_files}
             />
@@ -354,14 +379,22 @@ export const AlertDetailPage: React.FC = () => {
                 </Button>
                 {alert.status === 'escalated' ? (
                   alert.case_id && (
-                    <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
-                      Открыть инцидент
-                    </Button>
+                    <>
+                      <Button variant="primary" size="sm" onClick={() => navigate(`/cases/${alert.case_id}`)}>
+                        Открыть инцидент
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={handleDetach} isLoading={isActing}>
+                        Отсоединить
+                      </Button>
+                    </>
                   )
                 ) : alert.status === 'dismissed' || alert.status === 'archived' ? null : (
                   <>
                     <Button variant="primary" size="sm" onClick={handleEscalate} isLoading={isActing}>
                       Эскалировать
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setShowAttachModal(true)}>
+                      Присоединить
                     </Button>
                     <Button variant="danger" size="sm" onClick={handleDismiss} isLoading={isActing}>
                       Отклонить
@@ -649,6 +682,13 @@ export const AlertDetailPage: React.FC = () => {
         onClose={() => setShowAssignModal(false)}
         onAssign={handleAssign}
         isLoading={isAssigning}
+      />
+
+      <AttachAlertsToCaseModal
+        isOpen={showAttachModal}
+        onClose={() => setShowAttachModal(false)}
+        alertIds={alert ? [alert.id] : []}
+        onAttached={handleAttached}
       />
 
       <AlertRuleFormModal

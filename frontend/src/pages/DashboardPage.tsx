@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useCaseStore } from '../store/case'
@@ -335,10 +335,8 @@ export const DashboardPage: React.FC = () => {
                 {cases.map((c, idx) => (
                   <tr
                     key={c.id}
-                    onClick={() => navigate(`/cases/${c.id}`)}
                     style={{
                       borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
-                      cursor: 'pointer',
                       transition: 'background 0.1s',
                     }}
                     onMouseEnter={(e) => {
@@ -350,24 +348,28 @@ export const DashboardPage: React.FC = () => {
                     }}
                   >
                     <Td>
-                      <code
+                      <Link
+                        to={`/cases/${c.id}`}
                         style={{
                           fontSize: 12,
+                          fontFamily: 'monospace',
                           color: 'var(--accent)',
                           background: 'rgba(88,166,255,0.1)',
                           padding: '2px 6px',
                           borderRadius: 4,
+                          textDecoration: 'none',
                         }}
                       >
                         {c.id.slice(0, 8)}
-                      </code>
+                      </Link>
                     </Td>
                     <Td>
-                      <div
-                        style={{ fontWeight: 500, color: 'var(--text-primary)', maxWidth: 400 }}
+                      <Link
+                        to={`/cases/${c.id}`}
+                        style={{ display: 'block', fontWeight: 500, color: 'var(--text-primary)', maxWidth: 400 }}
                       >
                         {c.title}
-                      </div>
+                      </Link>
                       {c.classification && (
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                           {c.classification}

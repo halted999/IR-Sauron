@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import String, and_, cast, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,12 +16,14 @@ from app.models import (
     CaseSeverity, CaseStatus, ConfidenceLevel, Event, EventType, User,
 )
 from app.schemas import (
-    AlertAssignRequest, AlertBulkEscalateRequest, AlertCreate, AlertEscalateRequest,
-    AlertDeleteRequest, AlertIdsRequest, AlertResponse, AlertUpdate, CaseResponse, SimilarAlert,
-    SimilarAlertsResponse,
+    AlertAssignRequest, AlertAttachToCaseRequest, AlertBulkEscalateRequest, AlertCreate,
+    AlertEscalateRequest, AlertDeleteRequest, AlertIdsRequest, AlertResponse, AlertUpdate,
+    CaseResponse, SimilarAlert, SimilarAlertsResponse,
 )
-from app.services.alert_rules import apply_matching_rules
+from app.services.alert_rules import apply_matching_rules, escalate_alert_to_existing_case
 from app.services.alert_stats_parsing import is_internal_ip, resolve_accounts, resolve_ips
+from app.services.kql import KqlSyntaxError, parse_kql, reduce_node, term_to_ilike_pattern
+from app.services.notifications import notify_alert_escalated, notify_new_alert
 from app.services.mitre_attack import raised_alert_severity
 
 _SEVERITY_ORDER = [
@@ -37,6 +39,8 @@ def _case_options():
     return (
         selectinload(Case.ir_lead),
         selectinload(Case.participants).selectinload(CaseParticipant.user),
+        selectinload(Case.parent_case),
+        selectinload(Case.attached_cases),
     )
 
 
@@ -62,6 +66,14 @@ async def _get_alert_or_404(alert_id: uuid.UUID, db: AsyncSession) -> Alert:
     return alert
 
 
+async def _get_case_or_404(case_id: uuid.UUID, db: AsyncSession) -> Case:
+    result = await db.execute(select(Case).where(Case.id == case_id))
+    case = result.scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    return case
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[AlertResponse])
@@ -73,6 +85,7 @@ async def list_alerts(
     severity: Optional[CaseSeverity] = None,
     case_id: Optional[uuid.UUID] = None,
     deleted: bool = False,
+    q: Optional[str] = Query(None, min_length=1),
     skip: int = 0,
     limit: int = 50,
 ) -> List[Alert]:
@@ -83,6 +96,23 @@ async def list_alerts(
         filters.append(Alert.severity == severity)
     if case_id:
         filters.append(Alert.case_id == case_id)
+    if q:
+        try:
+            kql_ast = parse_kql(q)
+        except KqlSyntaxError:
+            # Malformed query — degrade to "no filter" rather than a 500; the
+            # frontend independently validates the same grammar and shows the
+            # syntax error inline, so this only fires on a direct bad API call.
+            kql_ast = None
+        if kql_ast is not None:
+            def _alert_term_condition(term_value: str, quoted: bool):
+                pattern = term_to_ilike_pattern(term_value, quoted)
+                return or_(
+                    Alert.title.ilike(pattern),
+                    Alert.description.ilike(pattern),
+                    cast(Alert.id, String).ilike(pattern),
+                )
+            filters.append(reduce_node(kql_ast, _alert_term_condition, and_, or_, not_))
 
     count_result = await db.execute(select(func.count()).select_from(select(Alert.id).where(*filters).subquery()))
     response.headers["X-Total-Count"] = str(count_result.scalar_one())
@@ -127,6 +157,7 @@ async def create_alert(
     )
 
     await apply_matching_rules(db, alert, current_user.id)
+    await notify_new_alert(db, alert)
 
     await db.flush()
     await db.refresh(alert)
@@ -196,6 +227,50 @@ async def escalate_alerts_bulk(
         user_id=current_user.id,
         case_id=case.id,
         action="escalate_from_alerts_bulk",
+        object_type="case",
+        object_id=str(case.id),
+        details={"alert_ids": [str(a.id) for a in alerts]},
+        request=request,
+    )
+
+    for alert in alerts:
+        await notify_alert_escalated(db, alert, case)
+
+    await db.flush()
+    result = await db.execute(
+        select(Case).options(*_case_options()).where(Case.id == case.id)
+    )
+    return result.scalar_one()
+
+
+# ── Attach to an existing case ───────────────────────────────────────────────
+
+@router.post("/attach-to-case", response_model=CaseResponse)
+async def attach_alerts_to_case(
+    payload: AlertAttachToCaseRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_write_access)],
+) -> Case:
+    case = await _get_case_or_404(payload.case_id, db)
+
+    alert_ids = set(payload.alert_ids)
+    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
+    alerts = list(result.scalars().all())
+
+    if len(alerts) != len(alert_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more alerts not found")
+    if any(a.status == AlertStatus.escalated and a.case_id is not None for a in alerts):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more alerts already escalated")
+
+    for alert in alerts:
+        await escalate_alert_to_existing_case(db, alert, case.id, current_user.id)
+
+    await log_action(
+        db=db,
+        user_id=current_user.id,
+        case_id=case.id,
+        action="attach_alerts_to_case",
         object_type="case",
         object_id=str(case.id),
         details={"alert_ids": [str(a.id) for a in alerts]},
@@ -367,6 +442,8 @@ async def escalate_alert(
         details={"alert_id": str(alert.id)},
         request=request,
     )
+
+    await notify_alert_escalated(db, alert, case)
 
     await db.flush()
     result = await db.execute(

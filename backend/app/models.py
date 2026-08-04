@@ -717,6 +717,11 @@ class AppSettings(Base):
     smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Destination addresses for outbound notification emails (new alert / escalation /
+    # case status change) — distinct from smtp_username, which is the sending account.
+    email_notification_recipients: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
 
     telegram_bot_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

@@ -11,6 +11,7 @@ from app.models import (
     Alert, AlertRule, AlertRuleAction, AlertStatus, Branch, BranchStatus,
     Case, CaseParticipant, CaseSeverity, CaseStatus, ConfidenceLevel, Event, EventType,
 )
+from app.services.notifications import notify_alert_escalated
 
 
 @dataclass
@@ -86,10 +87,11 @@ async def _escalate_to_new_case(db: AsyncSession, alert: Alert, actor_user_id: O
     alert.case_id = case.id
     db.add(_event_from_alert(alert, main_branch.id, 0, actor_user_id))
     await db.flush()
+    await notify_alert_escalated(db, alert, case)
     return case
 
 
-async def _escalate_to_existing_case(
+async def escalate_alert_to_existing_case(
     db: AsyncSession, alert: Alert, case_id: uuid.UUID, actor_user_id: Optional[uuid.UUID]
 ) -> None:
     result = await db.execute(
@@ -107,6 +109,11 @@ async def _escalate_to_existing_case(
     db.add(_event_from_alert(alert, main_branch.id, sort_order, actor_user_id))
     await db.flush()
 
+    case_result = await db.execute(select(Case).where(Case.id == case_id))
+    case = case_result.scalar_one_or_none()
+    if case is not None:
+        await notify_alert_escalated(db, alert, case)
+
 
 async def _apply(
     db: AsyncSession, rule: AlertRule, alert: Alert, actor_user_id: Optional[uuid.UUID]
@@ -119,7 +126,7 @@ async def _apply(
         if rule.tag_value and rule.tag_value not in alert.tags:
             alert.tags = [*alert.tags, rule.tag_value]
     elif rule.target_case_id is not None:
-        await _escalate_to_existing_case(db, alert, rule.target_case_id, actor_user_id)
+        await escalate_alert_to_existing_case(db, alert, rule.target_case_id, actor_user_id)
     else:
         await _escalate_to_new_case(db, alert, actor_user_id)
 

@@ -225,6 +225,12 @@ async def _add_missing_columns_if_needed(conn) -> None:
     await conn.execute(
         text("ALTER TABLE event_sources ADD COLUMN IF NOT EXISTS file_offsets JSONB NULL")
     )
+    await conn.execute(
+        text(
+            "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS "
+            "email_notification_recipients JSONB NOT NULL DEFAULT '[]'"
+        )
+    )
 
 
 async def _migrate_informational_severity_to_low(conn) -> None:

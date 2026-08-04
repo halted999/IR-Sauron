@@ -18,6 +18,7 @@ from app.services.email_client import EmailClient
 from app.services.file_watch_client import FileWatchClient
 from app.services.json_api_client import JsonApiClient
 from app.services.mitre_attack import raised_alert_severity
+from app.services.notifications import notify_new_alert
 from app.services.thehive_client import TheHiveClient
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,7 @@ async def _bulk_ingest_alerts(
         await db.flush()
         for alert in new_alerts:
             await apply_matching_rules(db, alert)
+            await notify_new_alert(db, alert)
         new_count += len(new_alerts)
 
     return new_count
@@ -161,6 +163,7 @@ async def _ingest_file_watch_records(
         await db.flush()
         for alert in new_alerts:
             await apply_matching_rules(db, alert)
+            await notify_new_alert(db, alert)
         new_count += len(new_alerts)
 
     return new_count
@@ -226,6 +229,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
+                await notify_new_alert(db, alert)
                 new_count += 1
         elif source.source_type == EventSourceType.thehive:
             client = TheHiveClient(source.base_url, secret, source.verify_ssl)
@@ -248,6 +252,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
+                await notify_new_alert(db, alert)
                 new_count += 1
 
         elif source.source_type == EventSourceType.file_watch:
@@ -289,6 +294,7 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 db.add(alert)
                 await db.flush()
                 await apply_matching_rules(db, alert)
+                await notify_new_alert(db, alert)
                 new_count += 1
 
         else:  # EventSourceType.json_api

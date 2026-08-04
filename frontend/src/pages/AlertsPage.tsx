@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useAlertStore } from '../store/alert'
@@ -16,6 +16,7 @@ import { AlertModal } from '../components/Alerts/AlertModal'
 import { AlertRulesModal } from '../components/Alerts/AlertRulesModal'
 import { AlertRuleFormModal } from '../components/Alerts/AlertRuleFormModal'
 import { AssignUserModal } from '../components/Alerts/AssignUserModal'
+import { AttachAlertsToCaseModal } from '../components/Alerts/AttachAlertsToCaseModal'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
@@ -23,7 +24,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { Pagination } from '../components/ui/Pagination'
 import { MultiSelectDropdown } from '../components/ui/MultiSelectDropdown'
 import type { AlertsParams } from '../api/alerts'
-import type { Alert, AlertStatus, CaseSeverity, CreateAlertData } from '../types'
+import type { Alert, AlertStatus, Case, CaseSeverity, CreateAlertData } from '../types'
 import { ALERT_STATUS_LABELS, CASE_SEVERITY_LABELS } from '../types'
 import { compileKqlQuery } from '../utils/kql'
 
@@ -70,6 +71,7 @@ export const AlertsPage: React.FC = () => {
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
+  const [showAttachModal, setShowAttachModal] = useState(false)
 
   useEffect(() => {
     getAssignableUsers()
@@ -91,14 +93,28 @@ export const AlertsPage: React.FC = () => {
     }
     if (filterStatuses.size > 0) params.status = [...filterStatuses]
     if (filterSeverity !== 'all') params.severity = filterSeverity as CaseSeverity
+    if (debouncedQuery.trim()) params.q = debouncedQuery.trim()
     return params
   }
+
+  // Debounced so the search box doesn't fire a request on every keystroke —
+  // the query is matched server-side (title/description/id) against the full
+  // table, not just the currently-loaded page, so results beyond page 1 are
+  // still found.
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   useEffect(() => {
     fetchAlerts(buildParams()).catch(() => toast.error('Ошибка загрузки алертов'))
     setSelectedIds(new Set())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterSeverity, showArchive, page, pageSize])
+  }, [filterStatuses, filterSeverity, showArchive, page, pageSize, debouncedQuery])
 
   const handleFilterStatusesChange = (next: Set<string>) => {
     setFilterStatuses(next as Set<AlertStatus>)
@@ -173,17 +189,12 @@ export const AlertsPage: React.FC = () => {
     }
   }
 
+  // Client-side parse is only used to surface a syntax error inline while
+  // typing — actual matching now happens server-side (see buildParams/q),
+  // against the full table rather than just the currently-loaded page.
   const searchKql = useMemo(() => compileKqlQuery(searchQuery), [searchQuery])
 
-  const filteredAlerts = alerts.filter((a) => {
-    if (filterStatuses.size > 0 && !filterStatuses.has(a.status)) return false
-    if (filterSeverity !== 'all' && a.severity !== filterSeverity) return false
-    const dateStr = format(new Date(a.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })
-    const statusStr = ALERT_STATUS_LABELS[a.status]
-    const descriptionStr = a.description ?? ''
-    if (!searchKql.test(`${dateStr}\n${statusStr}\n${descriptionStr}`)) return false
-    return true
-  })
+  const filteredAlerts = alerts
 
   const isSelectable = (a: Alert) => a.status !== 'escalated'
   const selectableAlerts = filteredAlerts.filter(isSelectable)
@@ -220,6 +231,16 @@ export const AlertsPage: React.FC = () => {
     } finally {
       setIsBulkEscalating(false)
     }
+  }
+
+  const handleAttached = (updatedCase: Case) => {
+    alerts
+      .filter((a) => selectedIds.has(a.id))
+      .forEach((a) => updateAlertInStore({ ...a, status: 'escalated', case_id: updatedCase.id }))
+    toast.success(`Присоединено к инциденту «${updatedCase.title}»: ${selectedIds.size} алертов`)
+    setSelectedIds(new Set())
+    setShowAttachModal(false)
+    navigate(`/cases/${updatedCase.id}`)
   }
 
   const handleConfirmDelete = async (reason: string) => {
@@ -322,6 +343,9 @@ export const AlertsPage: React.FC = () => {
                   <Button variant="primary" onClick={handleBulkEscalate} isLoading={isBulkEscalating}>
                     Создать инцидент ({selectedIds.size})
                   </Button>
+                  <Button variant="secondary" onClick={() => setShowAttachModal(true)}>
+                    Присоединить ({selectedIds.size})
+                  </Button>
                   <Button variant="secondary" onClick={() => setShowRuleFromSelection(true)}>
                     В правило ({selectedIds.size})
                   </Button>
@@ -368,7 +392,7 @@ export const AlertsPage: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder='Поиск (KQL) по дате, статусу, описанию…'
+            placeholder='Поиск (KQL) по названию и описанию…'
             style={{ width: '100%' }}
           />
           {searchKql.error && (
@@ -521,38 +545,40 @@ export const AlertsPage: React.FC = () => {
                       </Td>
                     )}
                     <Td>
-                      <code
-                        onClick={() => navigate(`/alerts/${a.id}`)}
+                      <Link
+                        to={`/alerts/${a.id}`}
                         style={{
                           fontSize: 12,
+                          fontFamily: 'monospace',
                           color: 'var(--accent)',
                           background: 'rgba(88,166,255,0.1)',
                           padding: '2px 6px',
                           borderRadius: 4,
-                          cursor: 'pointer',
+                          textDecoration: 'none',
                         }}
                       >
                         {a.id.slice(0, 8)}
-                      </code>
+                      </Link>
                     </Td>
                     <Td>
-                      <div
-                        onClick={() => navigate(`/alerts/${a.id}`)}
+                      <Link
+                        to={`/alerts/${a.id}`}
                         style={{
+                          display: 'block',
                           fontWeight: 500,
                           color: 'var(--text-primary)',
                           maxWidth: 400,
-                          cursor: 'pointer',
+                          textDecoration: 'none',
                         }}
                         onMouseEnter={(e) => {
-                          ;(e.currentTarget as HTMLDivElement).style.textDecoration = 'underline'
+                          ;(e.currentTarget as HTMLAnchorElement).style.textDecoration = 'underline'
                         }}
                         onMouseLeave={(e) => {
-                          ;(e.currentTarget as HTMLDivElement).style.textDecoration = 'none'
+                          ;(e.currentTarget as HTMLAnchorElement).style.textDecoration = 'none'
                         }}
                       >
                         {a.title}
-                      </div>
+                      </Link>
                       {a.description && (
                         <div
                           style={{
@@ -622,12 +648,9 @@ export const AlertsPage: React.FC = () => {
                           </span>
                         ) : a.status === 'escalated' ? (
                           a.case_id ? (
-                            <button
-                              onClick={() => navigate(`/cases/${a.case_id}`)}
-                              style={linkBtnStyle}
-                            >
+                            <Link to={`/cases/${a.case_id}`} style={{ ...linkBtnStyle, textDecoration: 'none' }}>
                               Открыть инцидент
-                            </button>
+                            </Link>
                           ) : (
                             <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
                           )
@@ -696,6 +719,13 @@ export const AlertsPage: React.FC = () => {
         onAssign={handleAssign}
         isLoading={isAssigning}
         title={`Назначить (${selectedIds.size})`}
+      />
+
+      <AttachAlertsToCaseModal
+        isOpen={showAttachModal}
+        onClose={() => setShowAttachModal(false)}
+        alertIds={Array.from(selectedIds)}
+        onAttached={handleAttached}
       />
 
       <ConfirmDialog

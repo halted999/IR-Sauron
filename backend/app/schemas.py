@@ -259,6 +259,11 @@ class AlertBulkEscalateRequest(BaseModel):
     external_ticket_id: Optional[str] = Field(None, max_length=255)
 
 
+class AlertAttachToCaseRequest(BaseModel):
+    alert_ids: List[uuid.UUID] = Field(..., min_length=1)
+    case_id: uuid.UUID
+
+
 class DescriptionField(BaseModel):
     key: str
     value: str
@@ -790,6 +795,7 @@ class AppSettingsUpdate(BaseModel):
     smtp_from_email: Optional[str] = Field(None, max_length=255)
     smtp_use_tls: Optional[bool] = None
     email_notifications_enabled: Optional[bool] = None
+    email_notification_recipients: Optional[List[str]] = None
     telegram_bot_token: Optional[str] = Field(None, max_length=255)
     telegram_chat_id: Optional[str] = Field(None, max_length=255)
     telegram_notifications_enabled: Optional[bool] = None
@@ -806,6 +812,7 @@ class AppSettingsResponse(BaseModel):
     smtp_from_email: Optional[str]
     smtp_use_tls: bool
     email_notifications_enabled: bool
+    email_notification_recipients: List[str]
     telegram_bot_token: Optional[str]
     telegram_chat_id: Optional[str]
     telegram_notifications_enabled: bool
