@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -13,9 +13,9 @@ import { UserFormModal } from '../components/Admin/UserFormModal'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import {
   getAppSettings, updateAppSettings, backupConfig, backupDatabase, getRolePermissions, updateRolePermissions,
-  restoreConfig, restoreDatabase, RESTORE_CONFIRM_PHRASE, getAuditLog,
+  restoreConfig, restoreDatabase, RESTORE_CONFIRM_PHRASE, getAuditLog, getSslCertificate, uploadSslCertificate,
 } from '../api/admin'
-import type { AppSettings, RolePermissionItem, AuditLogEntry } from '../api/admin'
+import type { AppSettings, RolePermissionItem, AuditLogEntry, SslCertificateInfo } from '../api/admin'
 import {
   getUsers, createUser, updateUser, deactivateUser, activateUser, deleteUserPermanently,
 } from '../api/users'
@@ -37,11 +37,11 @@ type Section =
   | 'notifications' | 'users' | 'roles' | 'event_sources' | 'timezone' | 'backup' | 'audit_log' | 'demo_mode'
 
 const SECTIONS: { key: Section; label: string }[] = [
+  { key: 'timezone', label: 'Основные' },
   { key: 'notifications', label: 'Оповещения' },
   { key: 'users', label: 'Пользователи' },
   { key: 'roles', label: 'Роли пользователей' },
   { key: 'event_sources', label: 'Источники алертов' },
-  { key: 'timezone', label: 'Временная зона' },
   { key: 'backup', label: 'Импорт/бекап' },
   { key: 'audit_log', label: 'Лог действий' },
   { key: 'demo_mode', label: 'Демо-режим' },
@@ -1145,6 +1145,121 @@ const EventSourcesSection: React.FC = () => {
 
 // ─── Timezone ────────────────────────────────────────────────────────────────────
 
+function extractDetailMessage(err: unknown): string | undefined {
+  return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+}
+
+const SslCertificateCard: React.FC = () => {
+  const toast = useToastStore()
+  const [cert, setCert] = useState<SslCertificateInfo | null | undefined>(undefined)
+  const [certFile, setCertFile] = useState<File | null>(null)
+  const [keyFile, setKeyFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [error, setError] = useState('')
+  const certInputRef = useRef<HTMLInputElement>(null)
+  const keyInputRef = useRef<HTMLInputElement>(null)
+
+  const load = () => {
+    getSslCertificate()
+      .then(setCert)
+      .catch(() => setCert(null))
+  }
+
+  useEffect(load, [])
+
+  const handleUpload = async () => {
+    if (!certFile || !keyFile) {
+      setError('Выберите файл сертификата и файл приватного ключа')
+      return
+    }
+    setIsUploading(true)
+    setError('')
+    try {
+      const info = await uploadSslCertificate(certFile, keyFile)
+      setCert(info)
+      setCertFile(null)
+      setKeyFile(null)
+      if (certInputRef.current) certInputRef.current.value = ''
+      if (keyInputRef.current) keyInputRef.current.value = ''
+      toast.success('Сертификат установлен, nginx перезагружен автоматически')
+    } catch (e) {
+      setError(extractDetailMessage(e) || 'Ошибка установки сертификата')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const isExpired = cert ? new Date(cert.not_after).getTime() < Date.now() : false
+  const isExpiringSoon = cert && !isExpired
+    ? new Date(cert.not_after).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000
+    : false
+
+  return (
+    <Card>
+      <CardTitle>SSL-сертификат</CardTitle>
+
+      {cert === undefined ? (
+        <Spinner size={20} />
+      ) : cert ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, fontSize: 13 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {cert.is_self_signed && <Badge color="gray" label="Самоподписанный" size="sm" />}
+            {isExpired && <Badge color="red" label="Истёк" size="sm" />}
+            {isExpiringSoon && <Badge color="yellow" label="Истекает скоро" size="sm" />}
+            {!cert.is_self_signed && !isExpired && !isExpiringSoon && (
+              <Badge color="green" label="Действителен" size="sm" />
+            )}
+          </div>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>Кому выдан: </span>
+            {cert.subject}
+          </div>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>Кем выдан: </span>
+            {cert.issuer}
+          </div>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>Действителен до: </span>
+            {format(new Date(cert.not_after), 'dd.MM.yyyy HH:mm', { locale: ru })}
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+          Сертификат не установлен
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 420 }}>
+        <Field label="Файл сертификата (cert.pem / .crt)">
+          <input
+            ref={certInputRef}
+            type="file"
+            accept=".pem,.crt,.cer"
+            onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+          />
+        </Field>
+        <Field label="Файл приватного ключа (key.pem)">
+          <input
+            ref={keyInputRef}
+            type="file"
+            accept=".pem,.key"
+            onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+          />
+        </Field>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+          Ключ должен быть незашифрованным PEM. После загрузки nginx перечитывает сертификат автоматически, без перезапуска.
+        </div>
+        {error && <span style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</span>}
+        <div>
+          <Button variant="primary" size="sm" onClick={handleUpload} isLoading={isUploading}>
+            Установить сертификат
+          </Button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 const TimezoneSection: React.FC = () => {
   const toast = useToastStore()
   const [timezone, setTimezone] = useState('UTC')
@@ -1181,10 +1296,11 @@ const TimezoneSection: React.FC = () => {
   return (
     <div>
       <SectionHeader
-        title="Временная зона"
-        description="Используется как зона по умолчанию для системы. Метки времени в интерфейсе форматируются браузером пользователя."
+        title="Основные"
+        description="Базовые настройки системы: часовой пояс и SSL-сертификат для HTTPS."
       />
       <Card>
+        <CardTitle>Временная зона</CardTitle>
         <Field label="Часовой пояс">
           <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ maxWidth: 320 }}>
             {TIMEZONES.map((tz) => (
@@ -1197,12 +1313,14 @@ const TimezoneSection: React.FC = () => {
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10 }}>
           Текущее время сервера: {format(new Date(), 'dd.MM.yyyy HH:mm:ss', { locale: ru })} (браузер)
         </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <Button variant="primary" size="sm" onClick={handleSave} isLoading={isSaving}>
+            Сохранить
+          </Button>
+        </div>
       </Card>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="primary" onClick={handleSave} isLoading={isSaving}>
-          Сохранить
-        </Button>
-      </div>
+
+      <SslCertificateCard />
     </div>
   )
 }

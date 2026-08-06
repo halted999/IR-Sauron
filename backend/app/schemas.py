@@ -826,6 +826,17 @@ class AppSettingsResponse(BaseModel):
     updated_at: datetime
 
 
+# ─── SSL certificate ────────────────────────────────────────────────────────
+
+class SslCertificateInfo(BaseModel):
+    subject: str
+    issuer: str
+    not_before: datetime
+    not_after: datetime
+    is_self_signed: bool
+    fingerprint_sha256: str
+
+
 # ─── Demo mode ──────────────────────────────────────────────────────────────
 
 class DemoModeStatus(BaseModel):

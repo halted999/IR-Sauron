@@ -6,9 +6,32 @@ version: '3.9'
 
 services:
 
+  # ── One-off: seed the ssl_certs volume with the repo's default self-signed
+  # cert on first run, so nginx has something to serve before an admin
+  # uploads a real certificate via the admin panel. No-ops (`-n`) once the
+  # volume already has files, e.g. after an admin-uploaded cert replaces them.
+  ssl-init:
+    image: alpine:3.19
+    container_name: irt-ssl-init
+    restart: "no"
+    volumes:
+      - ./nginx/ssl-seed:/seed:ro
+      - ssl_certs:/data
+    entrypoint: >
+      /bin/sh -c "
+        cp -n /seed/cert.pem /seed/key.pem /data/ 2>/dev/null || true;
+        chown -R 999:999 /data;
+        chmod 600 /data/key.pem 2>/dev/null || true;
+        echo 'ssl_certs volume ready';
+      "
+    networks:
+      - irt-front
+
   # ── Reverse proxy + TLS termination ────────────────────────────────────────
   nginx:
-    image: nginx:1.25-alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: irt-nginx
     restart: unless-stopped
     ports:
@@ -17,9 +40,11 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ssl_certs:/etc/nginx/ssl:ro
       - nginx_logs:/var/log/nginx
     depends_on:
+      ssl-init:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       frontend:
@@ -86,6 +111,9 @@ services:
       ARTIFACT_WORM_ENABLED: ${ARTIFACT_WORM_ENABLED:-false}
       # Timezone (all events normalised to UTC internally)
       TZ: UTC
+      # Where the admin-panel SSL cert/key upload is written; shared with
+      # nginx via the ssl_certs volume (nginx watches it and self-reloads).
+      SSL_CERT_DIR: /data/ssl
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,6 +121,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      ssl-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 30s
@@ -104,6 +134,7 @@ services:
       - irt-back
     volumes:
       - backend_tmp:/tmp/irt
+      - ssl_certs:/data/ssl
     logging:
       driver: json-file
       options:
@@ -247,6 +278,8 @@ volumes:
   nginx_logs:
     driver: local
   backend_tmp:
+    driver: local
+  ssl_certs:
     driver: local
 
 # ── Networks (front/back разделены для изоляции) ────────────────────────────

@@ -80,14 +80,14 @@ restore: ## Восстановление из дампа: make restore FILE=back
 
 # ── TLS сертификаты (самоподписанные для dev) ─────────────────────────────────
 
-cert-gen: ## Сгенерировать self-signed сертификат для dev
-	@mkdir -p nginx/ssl
+cert-gen: ## Сгенерировать self-signed сертификат для dev (seed для volume ssl_certs)
+	@mkdir -p nginx/ssl-seed
 	openssl req -x509 -nodes -newkey rsa:4096 \
-	  -keyout nginx/ssl/key.pem \
-	  -out    nginx/ssl/cert.pem \
+	  -keyout nginx/ssl-seed/key.pem \
+	  -out    nginx/ssl-seed/cert.pem \
 	  -days   365 \
 	  -subj "/CN=irt.local/O=IR-Sauron/C=RU"
-	@echo "Certificates written to nginx/ssl/"
+	@echo "Certificates written to nginx/ssl-seed/ — run 'docker compose up ssl-init' (or a full 'up') to load them into the ssl_certs volume."
 
 # ── Проверка конфига ─────────────────────────────────────────────────────────
 

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
 
     cors_origins: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    # Directory backend writes the uploaded TLS cert/key pair to (cert.pem /
+    # key.pem). Shared with the nginx container via the `ssl_certs` volume —
+    # nginx watches it for changes and reloads itself. See nginx/entrypoint.sh.
+    ssl_cert_dir: str = "/data/ssl"
+
     debug: bool = False
 
     class Config:

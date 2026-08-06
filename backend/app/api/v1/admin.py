@@ -13,6 +13,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+
 from app.config import settings as app_config
 from app.core.audit import log_action
 from app.core.auth import get_password_hash
@@ -27,7 +31,8 @@ from app.models import AppSettings, AuditLog, Case, RolePermission, User, UserRo
 from app.schemas import (
     AppSettingsResponse, AppSettingsUpdate, AuditLogEntryDetailed, BackupRequest, DemoModeClearRequest,
     DemoModeClearResult, DemoModeSeedCountResult, DemoModeSeedDataResult, DemoModeStatus,
-    DemoModeToggleRequest, RolePermissionItem, RolePermissionsResponse, UpdateRolePermissionsRequest,
+    DemoModeToggleRequest, RolePermissionItem, RolePermissionsResponse, SslCertificateInfo,
+    UpdateRolePermissionsRequest,
 )
 from app.services import demo_seed
 
@@ -77,6 +82,104 @@ async def update_settings(
     await db.flush()
     await db.refresh(row)
     return row
+
+
+_SSL_CERT_MAX_BYTES = 64 * 1024  # cert/key PEM files are a few KB each
+
+
+def _cert_path() -> str:
+    return os.path.join(app_config.ssl_cert_dir, "cert.pem")
+
+
+def _key_path() -> str:
+    return os.path.join(app_config.ssl_cert_dir, "key.pem")
+
+
+def _cert_info(cert: x509.Certificate) -> SslCertificateInfo:
+    subject = cert.subject.rfc4514_string()
+    issuer = cert.issuer.rfc4514_string()
+    return SslCertificateInfo(
+        subject=subject,
+        issuer=issuer,
+        not_before=cert.not_valid_before_utc,
+        not_after=cert.not_valid_after_utc,
+        is_self_signed=(subject == issuer),
+        fingerprint_sha256=cert.fingerprint(hashes.SHA256()).hex(":"),
+    )
+
+
+@router.get("/ssl-certificate", response_model=SslCertificateInfo | None)
+async def get_ssl_certificate(
+    _: Annotated[User, Depends(require_manage_settings)],
+) -> SslCertificateInfo | None:
+    path = _cert_path()
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+    return _cert_info(cert)
+
+
+@router.post("/ssl-certificate", response_model=SslCertificateInfo, status_code=status.HTTP_201_CREATED)
+async def upload_ssl_certificate(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_manage_settings)],
+    cert_file: UploadFile = File(...),
+    key_file: UploadFile = File(...),
+) -> SslCertificateInfo:
+    cert_bytes = await cert_file.read()
+    key_bytes = await key_file.read()
+
+    if len(cert_bytes) > _SSL_CERT_MAX_BYTES or len(key_bytes) > _SSL_CERT_MAX_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл слишком большой для сертификата/ключа")
+
+    try:
+        cert = x509.load_pem_x509_certificate(cert_bytes, default_backend())
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Не удалось разобрать сертификат (ожидается PEM)"
+        ) from exc
+
+    try:
+        private_key = serialization.load_pem_private_key(key_bytes, password=None, backend=default_backend())
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось разобрать приватный ключ (ожидается незашифрованный PEM)",
+        ) from exc
+
+    if private_key.public_key().public_numbers() != cert.public_key().public_numbers():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Приватный ключ не соответствует сертификату")
+
+    if cert.not_valid_after_utc < datetime.now(dt_timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Срок действия сертификата истёк {cert.not_valid_after_utc:%Y-%m-%d}",
+        )
+
+    os.makedirs(app_config.ssl_cert_dir, exist_ok=True)
+    cert_path, key_path = _cert_path(), _key_path()
+    tmp_cert, tmp_key = cert_path + ".tmp", key_path + ".tmp"
+    with open(tmp_cert, "wb") as f:
+        f.write(cert_bytes)
+    with open(tmp_key, "wb") as f:
+        f.write(key_bytes)
+    os.chmod(tmp_key, 0o600)
+    # Atomic rename so nginx's file watcher (see nginx/entrypoint.sh) never
+    # observes a half-written cert/key pair.
+    os.replace(tmp_cert, cert_path)
+    os.replace(tmp_key, key_path)
+
+    info = _cert_info(cert)
+    await log_action(
+        db=db, user_id=current_user.id, case_id=None,
+        action="update", object_type="ssl_certificate", object_id=None,
+        details={"subject": info.subject, "not_after": info.not_after.isoformat()},
+        request=request,
+    )
+    await db.flush()
+    return info
 
 
 @router.get("/audit-log", response_model=List[AuditLogEntryDetailed])

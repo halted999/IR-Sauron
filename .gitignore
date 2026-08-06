@@ -15,6 +15,6 @@ venv/
 .DS_Store
 *.log
 
-nginx/ssl/*.pem
-nginx/ssl/*.key
-nginx/ssl/*.crt
+nginx/ssl-seed/*.pem
+nginx/ssl-seed/*.key
+nginx/ssl-seed/*.crt

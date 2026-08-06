@@ -84,6 +84,30 @@ export async function restoreDatabase(file: File, password: string, confirm: str
   })
 }
 
+export interface SslCertificateInfo {
+  subject: string
+  issuer: string
+  not_before: string
+  not_after: string
+  is_self_signed: boolean
+  fingerprint_sha256: string
+}
+
+export async function getSslCertificate(): Promise<SslCertificateInfo | null> {
+  const response = await apiClient.get<SslCertificateInfo | null>('/admin/ssl-certificate')
+  return response.data
+}
+
+export async function uploadSslCertificate(certFile: File, keyFile: File): Promise<SslCertificateInfo> {
+  const formData = new FormData()
+  formData.append('cert_file', certFile)
+  formData.append('key_file', keyFile)
+  const response = await apiClient.post<SslCertificateInfo>('/admin/ssl-certificate', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
 export interface RolePermissionItem {
   role: UserRole
   permission: string
