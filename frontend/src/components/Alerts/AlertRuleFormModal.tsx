@@ -16,6 +16,15 @@ interface AlertRuleFormModalProps {
   editingRule?: AlertRule | null
 }
 
+function extractErrorMessage(err: unknown): string | undefined {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && typeof detail[0]?.msg === 'string') {
+    return detail[0].msg.replace(/^Value error,\s*/, '')
+  }
+  return undefined
+}
+
 function commonValue<T>(values: T[]): T | undefined {
   if (values.length === 0) return undefined
   const [first, ...rest] = values
@@ -66,6 +75,7 @@ const MultiValueInput: React.FC<{
               addValue()
             }
           }}
+          onBlur={addValue}
           placeholder={placeholder}
           style={{ flex: 1 }}
         />
@@ -253,8 +263,8 @@ export const AlertRuleFormModal: React.FC<AlertRuleFormModalProps> = ({
         onSaved(form.applyToExisting ? { rule, applied_count: rule.applied_count } : undefined)
       }
       onClose()
-    } catch {
-      setError('Ошибка сохранения правила')
+    } catch (e) {
+      setError(extractErrorMessage(e) || 'Ошибка сохранения правила')
     } finally {
       setIsSaving(false)
     }
