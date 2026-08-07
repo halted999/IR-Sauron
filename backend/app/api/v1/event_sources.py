@@ -199,6 +199,8 @@ async def test_event_source_connection(
             file_mask=config.get("file_mask"),
             file_format=config.get("file_format"),
             csv_delimiter=config.get("csv_delimiter"),
+            username=source.auth_username,
+            password=secret,
         )
         ok, message = await client.test_connection()
         return EventSourceTestResult(ok=ok, message=message)

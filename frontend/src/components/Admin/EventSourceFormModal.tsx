@@ -29,6 +29,7 @@ const DEFAULT_FORM = {
   file_mask: '*.csv',
   file_format: 'csv' as 'csv' | 'json',
   csv_delimiter: ',',
+  skip_backlog: false,
   email_port: 993,
   email_mailbox: 'INBOX',
   email_use_ssl: true,
@@ -67,6 +68,7 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
         file_mask: (source.config?.file_mask as string | undefined) ?? '*.csv',
         file_format: (source.config?.file_format as 'csv' | 'json' | undefined) ?? 'csv',
         csv_delimiter: (source.config?.csv_delimiter as string | undefined) ?? ',',
+        skip_backlog: (source.config?.skip_backlog as boolean | undefined) ?? false,
         email_port: (source.config?.port as number | undefined) ?? 993,
         email_mailbox: (source.config?.mailbox as string | undefined) ?? 'INBOX',
         email_use_ssl: (source.config?.use_ssl as boolean | undefined) ?? true,
@@ -119,6 +121,7 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
                 file_mask: form.file_mask.trim() || '*',
                 file_format: form.file_format,
                 ...(form.file_format === 'csv' ? { csv_delimiter: form.csv_delimiter || ',' } : {}),
+                skip_backlog: form.skip_backlog,
               }
             : form.source_type === 'email'
               ? {
@@ -244,7 +247,7 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
             onChange={(e) => setField('base_url', e.target.value)}
             placeholder={
               form.source_type === 'file_watch'
-                ? '\\\\fileserver\\alerts-export'
+                ? '\\\\server.domain.local\\share\\folder'
                 : form.source_type === 'email'
                   ? 'imap.example.com'
                   : form.source_type === 'json_api'
@@ -253,6 +256,11 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
             }
           />
           {errors.base_url && <span style={{ color: 'var(--danger)', fontSize: 11 }}>{errors.base_url}</span>}
+          {form.source_type === 'file_watch' && (
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+              UNC-путь вида \\сервер\шара\папка — читается напрямую по SMB, монтировать папку в контейнер не нужно
+            </span>
+          )}
         </div>
 
         {form.source_type === 'elastic' && (
@@ -515,15 +523,43 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
                 >
                   <option value=",">Запятая (,)</option>
                   <option value=";">Точка с запятой (;)</option>
-                  <option value="\t">Табуляция</option>
+                  <option value={'\t'}>Табуляция</option>
                   <option value="|">Вертикальная черта (|)</option>
                 </select>
               </div>
             )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={form.skip_backlog}
+                onChange={(e) => setField('skip_backlog', e.target.checked)}
+                style={{ width: 'auto' }}
+              />
+              <span style={{ fontSize: 13 }}>Не читать уже накопленное в файле — алертами станут только новые строки</span>
+            </label>
+            {form.skip_backlog && (
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -8 }}>
+                При первом опросе источник запомнит текущий конец файла и не создаст алерты по уже имеющимся строкам —
+                только по тем, что появятся в файле после включения источника
+              </span>
+            )}
+            <div>
+              <label htmlFor="es-auth-username">Логин для SMB (необязательно)</label>
+              <input
+                id="es-auth-username"
+                type="text"
+                value={form.auth_username}
+                onChange={(e) => setField('auth_username', e.target.value)}
+                placeholder="DOMAIN\svc-irsauron"
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                Оставьте пустым, если папка доступна анонимно
+              </span>
+            </div>
           </>
         )}
 
-        {form.source_type !== 'file_watch' && (
+        {(form.source_type !== 'file_watch' || form.auth_username.trim()) && (
           <div>
             <label htmlFor="es-auth-secret">
               {form.source_type === 'elastic'
@@ -532,7 +568,9 @@ export const EventSourceFormModal: React.FC<EventSourceFormModalProps> = ({ isOp
                   ? 'API-токен TheHive *'
                   : form.source_type === 'email'
                     ? 'Пароль от почтового ящика *'
-                    : 'API-ключ *'}
+                    : form.source_type === 'file_watch'
+                      ? 'Пароль для SMB'
+                      : 'API-ключ *'}
             </label>
             <input
               id="es-auth-secret"

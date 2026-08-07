@@ -261,6 +261,9 @@ async def sync_source(db: AsyncSession, source: EventSource) -> EventSourceSyncR
                 file_mask=config.get("file_mask"),
                 file_format=config.get("file_format"),
                 csv_delimiter=config.get("csv_delimiter"),
+                username=source.auth_username,
+                password=secret,
+                skip_backlog=bool(config.get("skip_backlog")),
             )
             records, new_file_offsets = await client.fetch_records(source.file_offsets or {})
             new_count += await _ingest_file_watch_records(db, source, records)
